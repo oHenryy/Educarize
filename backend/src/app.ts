@@ -7,6 +7,7 @@ import moduleRoutes from "./routes/moduleRoutes";
 import lessonRoutes from "./routes/lessonRoutes";
 import enrollmentRoutes from "./routes/enrollmentRoutes";
 import categoryRoutes from "./routes/categoryRoutes";
+import progressRoutes from "./routes/progressRoutes";
 import { openApiSpec } from "./docs/openapi";
 
 const app = express();
@@ -24,6 +25,7 @@ app.use("/modules", moduleRoutes);
 app.use("/lessons", lessonRoutes);
 app.use("/enrollments", enrollmentRoutes);
 app.use("/categories", categoryRoutes);
+app.use("/progress", progressRoutes);
 
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
 
