@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { config } from "../config/env";
 
 type JwtPayload = {
   userId: string;
@@ -11,8 +12,6 @@ declare module "express-serve-static-core" {
     user?: JwtPayload;
   }
 }
-
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 
 export function authenticate(
   req: Request,
@@ -29,7 +28,7 @@ export function authenticate(
   const token = authHeader.substring(7);
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    const decoded = jwt.verify(token, config.jwtSecret) as JwtPayload;
     req.user = decoded;
     next();
   } catch (err) {

@@ -1,0 +1,88 @@
+import { prisma } from "../config/database";
+
+export class ModuleService {
+  async listByCourse(courseId: string) {
+    return await prisma.module.findMany({
+      where: { courseId },
+      include: {
+        lessons: { orderBy: { order: "asc" } },
+        quiz: {
+          include: {
+            _count: { select: { questions: true } },
+          },
+        },
+      },
+      orderBy: { order: "asc" },
+    });
+  }
+
+  async create(data: { title: string; description?: string; order?: number; courseId: string }, userId: string, userRole: string) {
+    const course = await prisma.course.findUnique({
+      where: { id: data.courseId },
+    });
+
+    if (!course) {
+      throw new Error("Curso não encontrado");
+    }
+
+    if (course.instructorId !== userId && userRole !== "ADMIN") {
+      throw new Error("Sem permissão para criar módulo neste curso");
+    }
+
+    return await prisma.module.create({
+      data: {
+        title: data.title,
+        description: data.description,
+        order: data.order || 0,
+        courseId: data.courseId,
+      },
+      include: {
+        course: {
+          select: { id: true, title: true },
+        },
+      },
+    });
+  }
+
+  async update(id: string, data: { title?: string; description?: string; order?: number }, userId: string, userRole: string) {
+    const module = await prisma.module.findUnique({
+      where: { id },
+      include: { course: true },
+    });
+
+    if (!module) {
+      throw new Error("Módulo não encontrado");
+    }
+
+    if (module.course.instructorId !== userId && userRole !== "ADMIN") {
+      throw new Error("Sem permissão para editar este módulo");
+    }
+
+    return await prisma.module.update({
+      where: { id },
+      data: {
+        ...(data.title && { title: data.title }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.order !== undefined && { order: data.order }),
+      },
+    });
+  }
+
+  async delete(id: string, userId: string, userRole: string) {
+    const module = await prisma.module.findUnique({
+      where: { id },
+      include: { course: true },
+    });
+
+    if (!module) {
+      throw new Error("Módulo não encontrado");
+    }
+
+    if (module.course.instructorId !== userId && userRole !== "ADMIN") {
+      throw new Error("Sem permissão para deletar este módulo");
+    }
+
+    await prisma.module.delete({ where: { id } });
+  }
+}
+

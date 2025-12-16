@@ -1,0 +1,102 @@
+import { prisma } from "../config/database";
+
+export class EnrollmentService {
+  async enroll(userId: string, courseId: string) {
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+    });
+
+    if (!course) {
+      throw new Error("Curso não encontrado");
+    }
+
+    if (course.status !== "PUBLISHED") {
+      const statusMessages: Record<string, string> = {
+        DRAFT: "Curso ainda não está publicado",
+        ARCHIVED: "Curso foi arquivado e não aceita novas matrículas",
+        SUSPENDED: "Curso está suspenso e não aceita novas matrículas",
+      };
+      throw new Error(statusMessages[course.status] || "Curso não está disponível para matrícula");
+    }
+
+    const existing = await prisma.enrollment.findUnique({
+      where: {
+        userId_courseId: { userId, courseId },
+      },
+    });
+
+    if (existing) {
+      throw new Error("Você já está matriculado neste curso");
+    }
+
+    return await prisma.enrollment.create({
+      data: { userId, courseId },
+      include: {
+        course: {
+          select: {
+            id: true,
+            title: true,
+            coverImageUrl: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+  }
+
+  async getMyEnrollments(userId: string) {
+    return await prisma.enrollment.findMany({
+      where: { userId },
+      include: {
+        course: {
+          include: {
+            instructor: {
+              select: {
+                id: true,
+                name: true,
+                avatarUrl: true,
+              },
+            },
+            category: true,
+            modules: {
+              include: {
+                _count: {
+                  select: { lessons: true },
+                },
+              },
+            },
+            _count: {
+              select: { enrollments: true },
+            },
+          },
+        },
+      },
+      orderBy: { enrolledAt: "desc" },
+    });
+  }
+
+  async cancelEnrollment(userId: string, courseId: string) {
+    const enrollment = await prisma.enrollment.findUnique({
+      where: {
+        userId_courseId: { userId, courseId },
+      },
+    });
+
+    if (!enrollment) {
+      throw new Error("Matrícula não encontrada");
+    }
+
+    await prisma.enrollment.delete({
+      where: {
+        userId_courseId: { userId, courseId },
+      },
+    });
+  }
+}
+

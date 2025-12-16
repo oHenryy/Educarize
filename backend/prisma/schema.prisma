@@ -17,6 +17,233 @@ model User {
   avatarUrl    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  
+  // Relações
+  coursesCreated    Course[]         @relation("CourseInstructor")
+  enrollments       Enrollment[]
+  progress          UserProgress[]
+  comments          LessonComment[]
+  certificates      Certificate[]
+  quizAttempts      QuizAttempt[]
+}
+
+model CourseCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  courses     Course[]
+}
+
+model Course {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  coverImageUrl   String?
+  /// Carga horária em horas
+  durationHours   Int      @default(0)
+  /// Dificuldade: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'
+  difficulty      String   @default("BEGINNER")
+  /// Status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'SUSPENDED'
+  status          String   @default("DRAFT")
+  
+  instructorId    String
+  categoryId      String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relações
+  instructor      User            @relation("CourseInstructor", fields: [instructorId], references: [id])
+  category        CourseCategory? @relation(fields: [categoryId], references: [id])
+  modules         Module[]
+  enrollments     Enrollment[]
+  certificates    Certificate[]
+}
+
+model Module {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  order       Int      @default(0)
+  
+  courseId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relações
+  course      Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons     Lesson[]
+  quiz        Quiz?
+}
+
+model Lesson {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  /// Link do vídeo (YouTube/Vimeo)
+  videoUrl    String?
+  /// Duração em minutos
+  durationMinutes Int   @default(0)
+  order       Int      @default(0)
+  
+  moduleId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relações
+  module      Module          @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  attachments LessonAttachment[]
+  comments    LessonComment[]
+  progress    UserProgress[]
+}
+
+model LessonAttachment {
+  id          String   @id @default(cuid())
+  name        String
+  fileUrl     String
+  fileType    String   /// 'PDF' | 'ZIP' | 'OTHER'
+  fileSize    Int?     /// Tamanho em bytes
+  
+  lessonId    String
+  createdAt   DateTime @default(now())
+  
+  // Relações
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+}
+
+model Enrollment {
+  id          String   @id @default(cuid())
+  
+  userId      String
+  courseId    String
+  enrolledAt  DateTime @default(now())
+  
+  // Relações
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+}
+
+model UserProgress {
+  id          String   @id @default(cuid())
+  
+  userId      String
+  lessonId    String
+  /// Se a aula foi marcada como concluída
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relações
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@index([lessonId])
+}
+
+model Quiz {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  /// Nota mínima para aprovação (0-100)
+  passingScore Int     @default(70)
+  
+  moduleId    String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relações
+  module      Module         @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  questions   QuizQuestion[]
+  attempts    QuizAttempt[]
+}
+
+model QuizQuestion {
+  id          String   @id @default(cuid())
+  question    String
+  /// Tipo: 'MULTIPLE_CHOICE'
+  type        String   @default("MULTIPLE_CHOICE")
+  /// Opções de resposta (JSON array)
+  options     String   /// JSON: ["Opção A", "Opção B", ...]
+  /// Índice da resposta correta (0-based)
+  correctAnswer Int
+  order       Int      @default(0)
+  
+  quizId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relações
+  quiz        Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+}
+
+model QuizAttempt {
+  id          String   @id @default(cuid())
+  
+  userId      String
+  quizId      String
+  /// Respostas do usuário (JSON object: { questionId: answerIndex })
+  answers     String   /// JSON: { "questionId1": 0, "questionId2": 2 }
+  /// Nota obtida (0-100)
+  score       Int
+  passed      Boolean
+  completedAt DateTime @default(now())
+  
+  // Relações
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quiz        Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([quizId])
+}
+
+model LessonComment {
+  id          String   @id @default(cuid())
+  content     String
+  /// Se é uma resposta a outro comentário
+  parentId    String?
+  
+  userId      String
+  lessonId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relações
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson      Lesson          @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  parent      LessonComment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies     LessonComment[] @relation("CommentReplies")
+  
+  @@index([lessonId])
+  @@index([userId])
+}
+
+model Certificate {
+  id          String   @id @default(cuid())
+  /// URL do PDF do certificado gerado
+  pdfUrl      String
+  
+  userId      String
+  courseId    String
+  issuedAt    DateTime @default(now())
+  
+  // Relações
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
 }
 
 
