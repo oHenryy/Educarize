@@ -98,7 +98,6 @@ export class CertificateService {
       .font("Helvetica-Bold")
       .text("CERTIFICADO", 50, 60, { width: pageWidth, align: "center" });
 
-    // Linha decorativa
     doc
       .strokeColor("#6366f1")
       .lineWidth(3)

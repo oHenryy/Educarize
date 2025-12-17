@@ -377,7 +377,6 @@ export class AdminService {
       },
     });
 
-    // Log de atividade
     await logActivity({
       action: "USER_UPDATED",
       description: `Papel do usuário "${updated.name}" alterado para ${newRole}`,

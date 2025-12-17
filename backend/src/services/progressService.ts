@@ -1,5 +1,6 @@
 import { prisma } from "../config/database";
 import { CertificateService } from "./certificateService";
+import { NotificationService } from "./notificationService";
 
 export class ProgressService {
   async markLessonCompleted(userId: string, lessonId: string) {
@@ -51,13 +52,35 @@ export class ProgressService {
           module: {
             select: {
               courseId: true,
+              course: {
+                select: {
+                  title: true,
+                },
+              },
             },
           },
         },
       });
 
       if (lesson) {
-        await certificateService.checkAndGenerateCertificate(userId, lesson.module.courseId);
+        const notificationService = new NotificationService();
+        await notificationService.createNotification(
+          userId,
+          "Aula concluída!",
+          `Você concluiu a aula "${lesson.title}" do curso "${lesson.module.course.title}". Continue assim!`,
+          "SUCCESS"
+        ).catch(err => console.error("Erro ao criar notificação:", err));
+
+        const certificate = await certificateService.checkAndGenerateCertificate(userId, lesson.module.courseId);
+        
+        if (certificate) {
+          await notificationService.createNotification(
+            userId,
+            "🎉 Parabéns! Certificado gerado!",
+            `Você completou o curso "${lesson.module.course.title}" e seu certificado está disponível para download.`,
+            "SUCCESS"
+          ).catch(err => console.error("Erro ao criar notificação de certificado:", err));
+        }
       }
     } catch (error) {
       console.error("Erro ao verificar certificado:", error);

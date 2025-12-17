@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../config/database";
 import { config } from "../config/env";
+import { logActivity } from "../utils/activityLogger";
 
 const JWT_EXPIRES_IN = "7d";
 

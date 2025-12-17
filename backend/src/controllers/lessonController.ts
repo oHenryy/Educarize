@@ -88,14 +88,14 @@ export class LessonController {
 
   async addAttachment(req: Request, res: Response): Promise<void> {
     try {
-      const { name, fileUrl, fileType, fileSize } = req.body;
+      const { name, description, fileUrl, fileType, fileSize, category, order, thumbnailUrl } = req.body;
       if (!name || !fileUrl || !fileType) {
         res.status(400).json({ error: "Nome, fileUrl e fileType são obrigatórios" });
         return;
       }
       const attachment = await lessonService.addAttachment(
         req.params.id,
-        { name, fileUrl, fileType, fileSize },
+        { name, description, fileUrl, fileType, fileSize, category, order, thumbnailUrl },
         req.user!.userId,
         req.user!.role
       );
@@ -108,6 +108,50 @@ export class LessonController {
       } else {
         res.status(500).json({ error: error.message });
       }
+    }
+  }
+
+  async updateAttachment(req: Request, res: Response): Promise<void> {
+    try {
+      const { name, description, fileUrl, fileType, fileSize, category, order, thumbnailUrl } = req.body;
+      const attachment = await lessonService.updateAttachment(
+        req.params.attachmentId,
+        { name, description, fileUrl, fileType, fileSize, category, order, thumbnailUrl },
+        req.user!.userId,
+        req.user!.role
+      );
+      res.json(attachment);
+    } catch (error: any) {
+      if (error.message === "Anexo não encontrado") {
+        res.status(404).json({ error: error.message });
+      } else if (error.message.includes("Sem permissão")) {
+        res.status(403).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: error.message });
+      }
+    }
+  }
+
+  async getAttachments(req: Request, res: Response): Promise<void> {
+    try {
+      const { category } = req.query;
+      const attachments = await lessonService.getAttachmentsByLesson(
+        req.params.id,
+        category as string | undefined
+      );
+      res.json(attachments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Erro ao buscar anexos" });
+    }
+  }
+
+  async downloadAttachment(req: Request, res: Response): Promise<void> {
+    try {
+      const attachmentId = req.params.attachmentId;
+      await lessonService.incrementAttachmentDownload(attachmentId);
+      res.json({ message: "Download registrado" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Erro ao registrar download" });
     }
   }
 

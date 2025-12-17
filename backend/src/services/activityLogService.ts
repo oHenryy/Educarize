@@ -18,7 +18,11 @@ export type ActivityAction =
   | "QUIZ_CREATED"
   | "QUIZ_UPDATED"
   | "QUIZ_DELETED"
-  | "CERTIFICATE_GENERATED";
+  | "CERTIFICATE_GENERATED"
+  | "LEARNING_PATH_CREATED"
+  | "LEARNING_PATH_UPDATED"
+  | "LEARNING_PATH_DELETED"
+  | "LEARNING_PATH_ENROLLMENT_CREATED";
 
 export type ResourceType =
   | "COURSE"
@@ -27,7 +31,9 @@ export type ResourceType =
   | "USER"
   | "ENROLLMENT"
   | "QUIZ"
-  | "CERTIFICATE";
+  | "CERTIFICATE"
+  | "LEARNING_PATH"
+  | "LEARNING_PATH_ENROLLMENT";
 
 export interface CreateActivityLogData {
   action: ActivityAction;

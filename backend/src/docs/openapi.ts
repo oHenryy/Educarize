@@ -25,7 +25,17 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
 - Quizzes: Sistema de avaliação com múltiplas tentativas
 - Comentários: Fórum de discussão por aula
 - Certificados: Geração automática de certificados PDF
-- Logs de Atividade: Auditoria de ações no sistema`
+- Logs de Atividade: Auditoria de ações no sistema
+- Favoritos: Sistema de wishlist para salvar cursos
+- Notas: Anotações por aula com busca
+- Avaliações: Sistema de reviews com estrelas e comentários
+- Notificações: Notificações automáticas de eventos importantes
+- Tags: Sistema de tags para categorização de cursos
+- Busca Avançada: Busca com múltiplos filtros
+- Trilhas de Aprendizado: Cursos organizados em sequência
+- Mensagens Diretas: Sistema de mensagens em tempo real (WebSocket)
+- Dashboard do Instrutor: Estatísticas e métricas para instrutores
+- Material de Apoio Expandido: Anexos categorizados com downloads`
   },
   servers: [
     {
@@ -1353,6 +1363,1174 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
           "403": { description: "Apenas ADMIN" }
         }
       }
+    },
+    "/auth/users": {
+      get: {
+        tags: ["Autenticação"],
+        summary: "Listar usuários (para mensagens)",
+        description: "Retorna uma lista básica de usuários para seleção em mensagens diretas",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Lista de usuários",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" },
+                      name: { type: "string" },
+                      email: { type: "string" },
+                      avatarUrl: { type: "string", nullable: true },
+                      role: { type: "string", enum: ["ADMIN", "INSTRUCTOR", "STUDENT"] }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/favorites": {
+      get: {
+        tags: ["Favoritos"],
+        summary: "Listar meus cursos favoritos",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Lista de cursos favoritos",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Course" }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      },
+      post: {
+        tags: ["Favoritos"],
+        summary: "Adicionar curso aos favoritos",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  courseId: { type: "string" }
+                },
+                required: ["courseId"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": { description: "Curso adicionado aos favoritos" },
+          "400": { description: "Curso já está nos favoritos" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/favorites/{courseId}": {
+      delete: {
+        tags: ["Favoritos"],
+        summary: "Remover curso dos favoritos",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Curso removido dos favoritos" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/favorites/{courseId}/check": {
+      get: {
+        tags: ["Favoritos"],
+        summary: "Verificar se curso está nos favoritos",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Status do favorito",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    isFavorite: { type: "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/notes": {
+      get: {
+        tags: ["Notas"],
+        summary: "Listar minhas notas",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Lista de notas",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Note" }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      },
+      post: {
+        tags: ["Notas"],
+        summary: "Criar nota em uma aula",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  lessonId: { type: "string" },
+                  content: { type: "string" }
+                },
+                required: ["lessonId", "content"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": { description: "Nota criada", content: { "application/json": { schema: { $ref: "#/components/schemas/Note" } } } },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/notes/{id}": {
+      put: {
+        tags: ["Notas"],
+        summary: "Atualizar nota",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  content: { type: "string" }
+                },
+                required: ["content"]
+              }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Nota atualizada" },
+          "403": { description: "Sem permissão" },
+          "401": { description: "Não autenticado" }
+        }
+      },
+      delete: {
+        tags: ["Notas"],
+        summary: "Deletar nota",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Nota deletada" },
+          "403": { description: "Sem permissão" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/notes/lesson/{lessonId}": {
+      get: {
+        tags: ["Notas"],
+        summary: "Listar notas de uma aula",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "lessonId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Lista de notas da aula",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Note" }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/reviews": {
+      post: {
+        tags: ["Avaliações"],
+        summary: "Criar avaliação de curso",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  courseId: { type: "string" },
+                  rating: { type: "integer", minimum: 1, maximum: 5 },
+                  comment: { type: "string" }
+                },
+                required: ["courseId", "rating"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": { description: "Avaliação criada", content: { "application/json": { schema: { $ref: "#/components/schemas/CourseReview" } } } },
+          "400": { description: "Já existe avaliação para este curso" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/reviews/{id}": {
+      put: {
+        tags: ["Avaliações"],
+        summary: "Atualizar avaliação",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  rating: { type: "integer", minimum: 1, maximum: 5 },
+                  comment: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Avaliação atualizada" },
+          "403": { description: "Sem permissão" },
+          "401": { description: "Não autenticado" }
+        }
+      },
+      delete: {
+        tags: ["Avaliações"],
+        summary: "Deletar avaliação",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Avaliação deletada" },
+          "403": { description: "Sem permissão" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/reviews/course/{courseId}": {
+      get: {
+        tags: ["Avaliações"],
+        summary: "Listar avaliações de um curso",
+        parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Lista de avaliações",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/CourseReview" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews/my": {
+      get: {
+        tags: ["Avaliações"],
+        summary: "Listar minhas avaliações",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Lista de minhas avaliações",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/CourseReview" }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/notifications": {
+      get: {
+        tags: ["Notificações"],
+        summary: "Listar minhas notificações",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Lista de notificações",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Notification" }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/notifications/{id}": {
+      put: {
+        tags: ["Notificações"],
+        summary: "Marcar notificação como lida",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Notificação marcada como lida" },
+          "401": { description: "Não autenticado" }
+        }
+      },
+      delete: {
+        tags: ["Notificações"],
+        summary: "Deletar notificação",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Notificação deletada" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/notifications/read-all": {
+      put: {
+        tags: ["Notificações"],
+        summary: "Marcar todas as notificações como lidas",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "Todas as notificações marcadas como lidas" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/notifications/unread-count": {
+      get: {
+        tags: ["Notificações"],
+        summary: "Obter contagem de notificações não lidas",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Contagem de notificações não lidas",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    count: { type: "integer", minimum: 0 }
+                  }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/tags": {
+      get: {
+        tags: ["Tags"],
+        summary: "Listar todas as tags",
+        responses: {
+          "200": {
+            description: "Lista de tags",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Tag" }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        tags: ["Tags"],
+        summary: "Criar tag (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  name: { type: "string" }
+                },
+                required: ["name"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": { description: "Tag criada" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
+    "/tags/popular": {
+      get: {
+        tags: ["Tags"],
+        summary: "Listar tags populares",
+        responses: {
+          "200": {
+            description: "Lista de tags populares",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" },
+                      name: { type: "string" },
+                      courseCount: { type: "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tags/{tagId}/courses": {
+      get: {
+        tags: ["Tags"],
+        summary: "Listar cursos por tag",
+        parameters: [{ name: "tagId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Lista de cursos com a tag",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Course" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tags/courses/{courseId}": {
+      get: {
+        tags: ["Tags"],
+        summary: "Listar tags de um curso",
+        parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Lista de tags do curso",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Tag" }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        tags: ["Tags"],
+        summary: "Adicionar tag a um curso (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  tagId: { type: "string" }
+                },
+                required: ["tagId"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": { description: "Tag adicionada ao curso" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
+    "/tags/courses/{courseId}/{tagId}": {
+      delete: {
+        tags: ["Tags"],
+        summary: "Remover tag de um curso (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "courseId", in: "path", required: true, schema: { type: "string" } },
+          { name: "tagId", in: "path", required: true, schema: { type: "string" } }
+        ],
+        responses: {
+          "200": { description: "Tag removida do curso" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
+    "/search/advanced": {
+      get: {
+        tags: ["Busca"],
+        summary: "Busca avançada de cursos",
+        parameters: [
+          { name: "q", in: "query", schema: { type: "string" }, description: "Termo de busca" },
+          { name: "categoryId", in: "query", schema: { type: "string" } },
+          { name: "difficulty", in: "query", schema: { type: "string", enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"] } },
+          { name: "minRating", in: "query", schema: { type: "integer", minimum: 1, maximum: 5 } },
+          { name: "tags", in: "query", schema: { type: "string" }, description: "IDs de tags separados por vírgula" },
+          { name: "status", in: "query", schema: { type: "string", enum: ["DRAFT", "PUBLISHED", "ARCHIVED", "SUSPENDED"] } },
+          { name: "instructorId", in: "query", schema: { type: "string" } }
+        ],
+        responses: {
+          "200": {
+            description: "Resultados da busca",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Course" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search/lessons": {
+      get: {
+        tags: ["Busca"],
+        summary: "Buscar aulas",
+        parameters: [
+          { name: "q", in: "query", schema: { type: "string" }, required: true, description: "Termo de busca" }
+        ],
+        responses: {
+          "200": {
+            description: "Resultados da busca",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Lesson" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search/notes": {
+      get: {
+        tags: ["Busca"],
+        summary: "Buscar minhas notas",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "q", in: "query", schema: { type: "string" }, required: true, description: "Termo de busca" }
+        ],
+        responses: {
+          "200": {
+            description: "Resultados da busca",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Note" }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/search/tags/popular": {
+      get: {
+        tags: ["Busca"],
+        summary: "Obter tags populares para busca",
+        responses: {
+          "200": {
+            description: "Lista de tags populares",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" },
+                      name: { type: "string" },
+                      courseCount: { type: "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search/suggestions": {
+      get: {
+        tags: ["Busca"],
+        summary: "Obter sugestões de busca",
+        parameters: [
+          { name: "q", in: "query", schema: { type: "string" }, description: "Termo parcial" }
+        ],
+        responses: {
+          "200": {
+            description: "Sugestões de busca",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    courses: { type: "array", items: { type: "string" } },
+                    tags: { type: "array", items: { type: "string" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/learning-paths": {
+      get: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Listar trilhas de aprendizado",
+        responses: {
+          "200": {
+            description: "Lista de trilhas",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LearningPath" }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Criar trilha de aprendizado (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  description: { type: "string" },
+                  coverImageUrl: { type: "string" },
+                  difficulty: { type: "string", enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"] },
+                  estimatedHours: { type: "integer", minimum: 0 },
+                  status: { type: "string", enum: ["DRAFT", "PUBLISHED", "ARCHIVED", "SUSPENDED"] }
+                },
+                required: ["title"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": { description: "Trilha criada" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
+    "/learning-paths/my": {
+      get: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Listar minhas trilhas",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Lista de trilhas do usuário",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LearningPath" }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/learning-paths/{id}": {
+      get: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Obter detalhes de uma trilha",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Detalhes da trilha",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LearningPath" }
+              }
+            }
+          },
+          "404": { description: "Trilha não encontrada" }
+        }
+      },
+      put: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Atualizar trilha (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  description: { type: "string" },
+                  coverImageUrl: { type: "string" },
+                  difficulty: { type: "string", enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"] },
+                  estimatedHours: { type: "integer", minimum: 0 },
+                  status: { type: "string", enum: ["DRAFT", "PUBLISHED", "ARCHIVED", "SUSPENDED"] }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Trilha atualizada" },
+          "403": { description: "Sem permissão" }
+        }
+      },
+      delete: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Deletar trilha (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Trilha deletada" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
+    "/learning-paths/{id}/progress": {
+      get: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Obter progresso em uma trilha",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Progresso na trilha",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LearningPathProgress" }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/learning-paths/{id}/courses": {
+      post: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Adicionar curso a uma trilha (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  courseId: { type: "string" },
+                  order: { type: "integer", minimum: 0 },
+                  isRequired: { type: "boolean", default: true }
+                },
+                required: ["courseId"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": { description: "Curso adicionado à trilha" },
+          "403": { description: "Sem permissão" }
+        }
+      },
+      delete: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Remover curso de uma trilha (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "courseId", in: "query", required: true, schema: { type: "string" } }
+        ],
+        responses: {
+          "200": { description: "Curso removido da trilha" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
+    "/learning-paths/{id}/enroll": {
+      post: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Inscrever-se em uma trilha",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "201": { description: "Inscrito na trilha com sucesso" },
+          "400": { description: "Já inscrito ou trilha não publicada" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/messages": {
+      post: {
+        tags: ["Mensagens"],
+        summary: "Enviar mensagem direta",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  receiverId: { type: "string" },
+                  content: { type: "string" }
+                },
+                required: ["receiverId", "content"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": {
+            description: "Mensagem enviada",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Message" }
+              }
+            }
+          },
+          "400": { description: "Não pode enviar mensagem para si mesmo" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/messages/conversations": {
+      get: {
+        tags: ["Mensagens"],
+        summary: "Listar conversas",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Lista de conversas",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      userId: { type: "string" },
+                      user: { $ref: "#/components/schemas/User" },
+                      lastMessage: { $ref: "#/components/schemas/Message" },
+                      unreadCount: { type: "integer", minimum: 0 }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/messages/conversations/{userId}": {
+      get: {
+        tags: ["Mensagens"],
+        summary: "Obter mensagens de uma conversa",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "userId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Lista de mensagens",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    messages: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/Message" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      },
+      put: {
+        tags: ["Mensagens"],
+        summary: "Marcar conversa como lida",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "userId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Conversa marcada como lida" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/messages/{id}": {
+      put: {
+        tags: ["Mensagens"],
+        summary: "Marcar mensagem como lida",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Mensagem marcada como lida" },
+          "401": { description: "Não autenticado" }
+        }
+      },
+      delete: {
+        tags: ["Mensagens"],
+        summary: "Deletar mensagem",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Mensagem deletada" },
+          "403": { description: "Sem permissão" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/messages/unread-count": {
+      get: {
+        tags: ["Mensagens"],
+        summary: "Obter contagem de mensagens não lidas",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Contagem de mensagens não lidas",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    count: { type: "integer", minimum: 0 }
+                  }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/instructor/dashboard/stats": {
+      get: {
+        tags: ["Instrutor"],
+        summary: "Obter estatísticas do dashboard do instrutor (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Estatísticas do dashboard",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    totalCourses: { type: "integer" },
+                    totalStudents: { type: "integer" },
+                    totalEnrollments: { type: "integer" },
+                    averageRating: { type: "number" },
+                    recentEnrollments: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          courseTitle: { type: "string" },
+                          studentName: { type: "string" },
+                          enrolledAt: { type: "string", format: "date-time" }
+                        }
+                      }
+                    },
+                    enrollmentTrends: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          month: { type: "string" },
+                          count: { type: "integer" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": { description: "Apenas INSTRUCTOR/ADMIN" }
+        }
+      }
+    },
+    "/lessons/{id}/attachments": {
+      get: {
+        tags: ["Aulas"],
+        summary: "Listar anexos de uma aula",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "Lista de anexos",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/LessonAttachment" }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      },
+      post: {
+        tags: ["Aulas"],
+        summary: "Adicionar anexo a uma aula (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  description: { type: "string" },
+                  fileUrl: { type: "string" },
+                  fileType: { type: "string", enum: ["PDF", "ZIP", "VIDEO", "LINK", "DOCUMENT", "IMAGE", "OTHER"] },
+                  fileSize: { type: "integer", minimum: 0 },
+                  category: { type: "string", enum: ["EXERCISE", "REFERENCE", "TEMPLATE", "SLIDES", "CODE", "OTHER"] },
+                  order: { type: "integer", minimum: 0 },
+                  thumbnailUrl: { type: "string" }
+                },
+                required: ["name", "fileUrl", "fileType"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": { description: "Anexo adicionado" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
+    "/lessons/attachments/{attachmentId}": {
+      put: {
+        tags: ["Aulas"],
+        summary: "Atualizar anexo (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "attachmentId", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  description: { type: "string" },
+                  fileUrl: { type: "string" },
+                  fileType: { type: "string", enum: ["PDF", "ZIP", "VIDEO", "LINK", "DOCUMENT", "IMAGE", "OTHER"] },
+                  fileSize: { type: "integer", minimum: 0 },
+                  category: { type: "string", enum: ["EXERCISE", "REFERENCE", "TEMPLATE", "SLIDES", "CODE", "OTHER"] },
+                  order: { type: "integer", minimum: 0 },
+                  thumbnailUrl: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Anexo atualizado" },
+          "403": { description: "Sem permissão" }
+        }
+      },
+      delete: {
+        tags: ["Aulas"],
+        summary: "Deletar anexo (INSTRUCTOR/ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "attachmentId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Anexo deletado" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
+    "/lessons/attachments/{attachmentId}/download": {
+      post: {
+        tags: ["Aulas"],
+        summary: "Registrar download de anexo",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "attachmentId", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Download registrado" },
+          "401": { description: "Não autenticado" }
+        }
+      }
     }
   },
   components: {
@@ -1862,6 +3040,269 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
           }
         },
         required: ["page", "limit", "total", "totalPages"]
+      },
+      Favorite: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "ID único do favorito" },
+          userId: { type: "string", description: "ID do usuário" },
+          courseId: { type: "string", description: "ID do curso" },
+          createdAt: { type: "string", format: "date-time" },
+          course: { $ref: "#/components/schemas/Course", description: "Dados do curso" }
+        },
+        required: ["id", "userId", "courseId", "createdAt"]
+      },
+      Note: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "ID único da nota" },
+          content: { type: "string", description: "Conteúdo da nota" },
+          userId: { type: "string", description: "ID do usuário" },
+          lessonId: { type: "string", description: "ID da aula" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          lesson: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              title: { type: "string" }
+            },
+            description: "Dados básicos da aula"
+          }
+        },
+        required: ["id", "content", "userId", "lessonId"]
+      },
+      CourseReview: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "ID único da avaliação" },
+          rating: { 
+            type: "integer", 
+            description: "Avaliação em estrelas (1-5)",
+            minimum: 1,
+            maximum: 5
+          },
+          comment: { 
+            type: "string", 
+            nullable: true,
+            description: "Comentário da avaliação" 
+          },
+          userId: { type: "string", description: "ID do usuário" },
+          courseId: { type: "string", description: "ID do curso" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          user: { 
+            $ref: "#/components/schemas/User",
+            description: "Dados do usuário que avaliou"
+          },
+          course: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              title: { type: "string" }
+            },
+            description: "Dados básicos do curso"
+          }
+        },
+        required: ["id", "rating", "userId", "courseId"]
+      },
+      Notification: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "ID único da notificação" },
+          title: { type: "string", description: "Título da notificação" },
+          message: { type: "string", description: "Mensagem da notificação" },
+          type: { 
+            type: "string", 
+            enum: ["INFO", "SUCCESS", "WARNING", "ERROR"],
+            description: "Tipo da notificação"
+          },
+          read: { 
+            type: "boolean", 
+            description: "Se a notificação foi lida",
+            default: false
+          },
+          userId: { type: "string", description: "ID do usuário" },
+          createdAt: { type: "string", format: "date-time" }
+        },
+        required: ["id", "title", "message", "type", "userId", "createdAt"]
+      },
+      Tag: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "ID único da tag" },
+          name: { type: "string", description: "Nome da tag", uniqueItems: true },
+          createdAt: { type: "string", format: "date-time" }
+        },
+        required: ["id", "name"]
+      },
+      Message: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "ID único da mensagem" },
+          content: { type: "string", description: "Conteúdo da mensagem" },
+          senderId: { type: "string", description: "ID do remetente" },
+          receiverId: { type: "string", description: "ID do destinatário" },
+          read: { 
+            type: "boolean", 
+            description: "Se a mensagem foi lida",
+            default: false
+          },
+          createdAt: { type: "string", format: "date-time" },
+          sender: { 
+            $ref: "#/components/schemas/User",
+            description: "Dados do remetente"
+          },
+          receiver: { 
+            $ref: "#/components/schemas/User",
+            description: "Dados do destinatário"
+          }
+        },
+        required: ["id", "content", "senderId", "receiverId", "createdAt"]
+      },
+      LearningPath: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "ID único da trilha" },
+          title: { type: "string", description: "Título da trilha" },
+          description: { 
+            type: "string", 
+            nullable: true,
+            description: "Descrição da trilha" 
+          },
+          coverImageUrl: { 
+            type: "string", 
+            nullable: true,
+            description: "URL da imagem de capa" 
+          },
+          difficulty: { 
+            type: "string", 
+            enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"],
+            description: "Nível de dificuldade",
+            default: "BEGINNER"
+          },
+          estimatedHours: { 
+            type: "integer", 
+            description: "Horas estimadas",
+            minimum: 0,
+            default: 0
+          },
+          status: { 
+            type: "string", 
+            enum: ["DRAFT", "PUBLISHED", "ARCHIVED", "SUSPENDED"],
+            description: "Status da trilha",
+            default: "DRAFT"
+          },
+          instructorId: { type: "string", description: "ID do instrutor" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          instructor: { 
+            $ref: "#/components/schemas/User",
+            description: "Dados do instrutor"
+          },
+          pathCourses: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                courseId: { type: "string" },
+                order: { type: "integer" },
+                isRequired: { type: "boolean" },
+                course: { $ref: "#/components/schemas/Course" }
+              }
+            },
+            description: "Cursos da trilha"
+          }
+        },
+        required: ["id", "title", "difficulty", "status", "instructorId"]
+      },
+      LearningPathProgress: {
+        type: "object",
+        properties: {
+          completedCourses: { 
+            type: "integer", 
+            description: "Cursos concluídos",
+            minimum: 0
+          },
+          totalCourses: { 
+            type: "integer", 
+            description: "Total de cursos",
+            minimum: 0
+          },
+          progressPercentage: { 
+            type: "integer", 
+            description: "Percentual de progresso",
+            minimum: 0,
+            maximum: 100
+          },
+          isCompleted: { 
+            type: "boolean", 
+            description: "Se a trilha foi completada"
+          },
+          enrolledAt: { type: "string", format: "date-time" },
+          completedAt: { 
+            type: "string", 
+            format: "date-time",
+            nullable: true
+          }
+        },
+        required: ["completedCourses", "totalCourses", "progressPercentage", "isCompleted"]
+      },
+      LessonAttachment: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "ID único do anexo" },
+          name: { type: "string", description: "Nome do anexo" },
+          description: { 
+            type: "string", 
+            nullable: true,
+            description: "Descrição do material" 
+          },
+          fileUrl: { 
+            type: "string", 
+            format: "uri",
+            description: "URL do arquivo" 
+          },
+          fileType: { 
+            type: "string", 
+            enum: ["PDF", "ZIP", "VIDEO", "LINK", "DOCUMENT", "IMAGE", "OTHER"],
+            description: "Tipo do arquivo"
+          },
+          fileSize: { 
+            type: "integer", 
+            nullable: true,
+            description: "Tamanho em bytes",
+            minimum: 0
+          },
+          category: { 
+            type: "string", 
+            nullable: true,
+            enum: ["EXERCISE", "REFERENCE", "TEMPLATE", "SLIDES", "CODE", "OTHER"],
+            description: "Categoria do material" 
+          },
+          order: { 
+            type: "integer", 
+            description: "Ordem de exibição",
+            minimum: 0,
+            default: 0
+          },
+          thumbnailUrl: { 
+            type: "string", 
+            nullable: true,
+            description: "URL da miniatura/preview" 
+          },
+          downloadCount: { 
+            type: "integer", 
+            description: "Contador de downloads",
+            minimum: 0,
+            default: 0
+          },
+          lessonId: { type: "string", description: "ID da aula" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" }
+        },
+        required: ["id", "name", "fileUrl", "fileType", "lessonId"]
       }
     }
   }

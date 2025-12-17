@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { NotificationService } from "./notificationService";
 
 export class QuizService {
   async getByModule(moduleId: string) {
@@ -332,13 +333,11 @@ export class QuizService {
       throw new Error("Quiz não encontrado");
     }
 
-    // Parse options JSON para array antes de calcular
     const questionsWithParsedOptions = quiz.questions.map((q) => ({
       ...q,
       options: JSON.parse(q.options),
     }));
 
-    // Calcular pontuação
     let correct = 0;
     const totalQuestions = questionsWithParsedOptions.length;
 
@@ -360,7 +359,39 @@ export class QuizService {
         score,
         passed,
       },
+      include: {
+        quiz: {
+          include: {
+            module: {
+              include: {
+                course: {
+                  select: {
+                    title: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
+
+    const notificationService = new NotificationService();
+    if (passed) {
+      await notificationService.createNotification(
+        userId,
+        "🎉 Quiz aprovado!",
+        `Parabéns! Você passou no quiz "${attempt.quiz.title}" do curso "${attempt.quiz.module.course.title}" com ${score}% de acerto.`,
+        "SUCCESS"
+      ).catch(err => console.error("Erro ao criar notificação:", err));
+    } else {
+      await notificationService.createNotification(
+        userId,
+        "Quiz não aprovado",
+        `Você obteve ${score}% no quiz "${attempt.quiz.title}" do curso "${attempt.quiz.module.course.title}". A nota mínima é ${attempt.quiz.passingScore}%. Tente novamente!`,
+        "WARNING"
+      ).catch(err => console.error("Erro ao criar notificação:", err));
+    }
 
     return attempt;
   }

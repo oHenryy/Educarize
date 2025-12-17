@@ -1,5 +1,6 @@
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
+import { NotificationService } from "./notificationService";
 
 export class EnrollmentService {
   async enroll(userId: string, courseId: string) {
@@ -50,7 +51,6 @@ export class EnrollmentService {
       },
     });
 
-    // Log de atividade
     await logActivity({
       action: "ENROLLMENT_CREATED",
       description: `Matrícula no curso "${enrollment.course.title}"`,
@@ -58,6 +58,23 @@ export class EnrollmentService {
       resourceType: "ENROLLMENT",
       userId,
     });
+
+    const notificationService = new NotificationService();
+    await notificationService.createNotification(
+      userId,
+      "Matrícula realizada com sucesso!",
+      `Você foi matriculado no curso "${enrollment.course.title}". Comece a estudar agora!`,
+      "SUCCESS"
+    ).catch(err => console.error("Erro ao criar notificação:", err));
+
+    if (course.instructorId) {
+      await notificationService.createNotification(
+        course.instructorId,
+        "Novo aluno matriculado",
+        `Um novo aluno se matriculou no seu curso "${enrollment.course.title}".`,
+        "INFO"
+      ).catch(err => console.error("Erro ao criar notificação para instrutor:", err));
+    }
 
     return enrollment;
   }
@@ -115,7 +132,6 @@ export class EnrollmentService {
       },
     });
 
-    // Log de atividade
     await logActivity({
       action: "ENROLLMENT_DELETED",
       description: `Matrícula cancelada no curso "${course?.title || courseId}"`,

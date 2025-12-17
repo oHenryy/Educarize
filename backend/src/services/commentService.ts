@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { NotificationService } from "./notificationService";
 
 export class CommentService {
   async listByLesson(lessonId: string) {
@@ -44,6 +45,25 @@ export class CommentService {
     content: string,
     parentId?: string
   ) {
+    const lesson = await prisma.lesson.findUnique({
+      where: { id: lessonId },
+      select: {
+        id: true,
+        title: true,
+        module: {
+          select: {
+            course: {
+              select: {
+                id: true,
+                title: true,
+                instructorId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
     const comment = await prisma.lessonComment.create({
       data: {
         content,
@@ -57,6 +77,17 @@ export class CommentService {
             id: true,
             name: true,
             avatarUrl: true,
+          },
+        },
+        parent: {
+          select: {
+            id: true,
+            userId: true,
+            user: {
+              select: {
+                name: true,
+              },
+            },
           },
         },
         replies: {
@@ -73,11 +104,31 @@ export class CommentService {
       },
     });
 
+    const notificationService = new NotificationService();
+
+    if (parentId && comment.parent) {
+      const parentComment = comment.parent;
+      if (parentComment.userId !== userId) {
+        await notificationService.createNotification(
+          parentComment.userId,
+          "Nova resposta no seu comentário",
+          `${comment.user.name} respondeu seu comentário na aula "${lesson?.title || "Aula"}" do curso "${lesson?.module.course.title || "Curso"}".`,
+          "INFO"
+        ).catch(err => console.error("Erro ao criar notificação de resposta:", err));
+      }
+    } else if (lesson && lesson.module.course.instructorId && lesson.module.course.instructorId !== userId) {
+      await notificationService.createNotification(
+        lesson.module.course.instructorId,
+        "Novo comentário na sua aula",
+        `${comment.user.name} comentou na aula "${lesson.title}" do curso "${lesson.module.course.title}".`,
+        "INFO"
+      ).catch(err => console.error("Erro ao criar notificação para instrutor:", err));
+    }
+
     return comment;
   }
 
   async update(commentId: string, userId: string, content: string) {
-    // Verificar se o comentário pertence ao usuário
     const existing = await prisma.lessonComment.findUnique({
       where: { id: commentId },
     });

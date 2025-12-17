@@ -199,7 +199,6 @@ export class CourseService {
       throw new Error("Curso não encontrado");
     }
 
-    // Verificar permissão
     if (course.instructorId !== userId && userRole !== "ADMIN") {
       throw new Error("Sem permissão para editar este curso");
     }
@@ -283,7 +282,6 @@ export class CourseService {
       throw new Error("Curso não encontrado");
     }
 
-    // Verificar permissão
     if (course.instructorId !== userId && userRole !== "ADMIN") {
       throw new Error("Sem permissão para deletar este curso");
     }
@@ -311,7 +309,6 @@ export class CourseService {
       throw new Error("Curso não encontrado");
     }
 
-    // Verificar permissão
     if (course.instructorId !== userId && userRole !== "ADMIN") {
       throw new Error("Sem permissão para ver alunos deste curso");
     }

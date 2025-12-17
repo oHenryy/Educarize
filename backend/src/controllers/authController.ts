@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { AuthService, RegisterData, LoginData } from "../services/authService";
+import { prisma } from "../config/database";
 
 const authService = new AuthService();
 
@@ -21,6 +22,24 @@ export class AuthController {
       } else {
         res.status(500).json({ error: error.message });
       }
+    }
+  }
+
+  async getUsers(req: Request, res: Response): Promise<void> {
+    try {
+      const users = await prisma.user.findMany({
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          avatarUrl: true,
+          role: true,
+        },
+        orderBy: { name: "asc" },
+      });
+      res.json(users);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Erro ao buscar usuários" });
     }
   }
 

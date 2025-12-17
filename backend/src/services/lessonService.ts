@@ -188,7 +188,16 @@ export class LessonService {
 
   async addAttachment(
     lessonId: string,
-    data: { name: string; fileUrl: string; fileType: string; fileSize?: number },
+    data: {
+      name: string;
+      description?: string;
+      fileUrl: string;
+      fileType: string;
+      fileSize?: number;
+      category?: string;
+      order?: number;
+      thumbnailUrl?: string;
+    },
     userId: string,
     userRole: string
   ) {
@@ -209,14 +218,98 @@ export class LessonService {
       throw new Error("Sem permissão para adicionar anexo nesta aula");
     }
 
+    const maxOrder = await prisma.lessonAttachment.findFirst({
+      where: { lessonId },
+      orderBy: { order: "desc" },
+      select: { order: true },
+    });
+
     return await prisma.lessonAttachment.create({
       data: {
         name: data.name,
+        description: data.description,
         fileUrl: data.fileUrl,
         fileType: data.fileType,
         fileSize: data.fileSize,
+        category: data.category,
+        order: data.order ?? (maxOrder ? maxOrder.order + 1 : 0),
+        thumbnailUrl: data.thumbnailUrl,
         lessonId,
       },
+    });
+  }
+
+  async updateAttachment(
+    attachmentId: string,
+    data: {
+      name?: string;
+      description?: string;
+      fileUrl?: string;
+      fileType?: string;
+      fileSize?: number;
+      category?: string;
+      order?: number;
+      thumbnailUrl?: string;
+    },
+    userId: string,
+    userRole: string
+  ) {
+    const attachment = await prisma.lessonAttachment.findUnique({
+      where: { id: attachmentId },
+      include: {
+        lesson: {
+          include: {
+            module: {
+              include: { course: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!attachment) {
+      throw new Error("Anexo não encontrado");
+    }
+
+    if (attachment.lesson.module.course.instructorId !== userId && userRole !== "ADMIN") {
+      throw new Error("Sem permissão para editar este anexo");
+    }
+
+    return await prisma.lessonAttachment.update({
+      where: { id: attachmentId },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.fileUrl && { fileUrl: data.fileUrl }),
+        ...(data.fileType && { fileType: data.fileType }),
+        ...(data.fileSize !== undefined && { fileSize: data.fileSize }),
+        ...(data.category !== undefined && { category: data.category }),
+        ...(data.order !== undefined && { order: data.order }),
+        ...(data.thumbnailUrl !== undefined && { thumbnailUrl: data.thumbnailUrl }),
+      },
+    });
+  }
+
+  async incrementAttachmentDownload(attachmentId: string) {
+    await prisma.lessonAttachment.update({
+      where: { id: attachmentId },
+      data: {
+        downloadCount: {
+          increment: 1,
+        },
+      },
+    });
+  }
+
+  async getAttachmentsByLesson(lessonId: string, category?: string) {
+    const where: any = { lessonId };
+    if (category) {
+      where.category = category;
+    }
+
+    return await prisma.lessonAttachment.findMany({
+      where,
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     });
   }
 

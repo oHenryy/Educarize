@@ -44,7 +44,6 @@ export class ModuleService {
       },
     });
 
-    // Log de atividade
     await logActivity({
       action: "MODULE_CREATED",
       description: `Módulo "${module.title}" criado no curso "${module.course.title}"`,
@@ -79,7 +78,6 @@ export class ModuleService {
       },
     });
 
-    // Log de atividade
     await logActivity({
       action: "MODULE_UPDATED",
       description: `Módulo "${updated.title}" atualizado`,

@@ -13,13 +13,22 @@ import quizRoutes from "./routes/quizRoutes";
 import adminRoutes from "./routes/adminRoutes";
 import certificateRoutes from "./routes/certificateRoutes";
 import activityLogRoutes from "./routes/activityLogRoutes";
+import favoriteRoutes from "./routes/favoriteRoutes";
+import tagRoutes from "./routes/tagRoutes";
+import noteRoutes from "./routes/noteRoutes";
+import reviewRoutes from "./routes/reviewRoutes";
+import notificationRoutes from "./routes/notificationRoutes";
+import instructorRoutes from "./routes/instructorRoutes";
+import searchRoutes from "./routes/searchRoutes";
+import learningPathRoutes from "./routes/learningPathRoutes";
+import messageRoutes from "./routes/messageRoutes";
 import { openApiSpec } from "./docs/openapi";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static("certificates")); // Servir arquivos de certificados estaticamente
+app.use(express.static("certificates"));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -37,6 +46,15 @@ app.use("/quizzes", quizRoutes);
 app.use("/admin", adminRoutes);
 app.use("/certificates", certificateRoutes);
 app.use("/activity-logs", activityLogRoutes);
+app.use("/favorites", favoriteRoutes);
+app.use("/tags", tagRoutes);
+app.use("/notes", noteRoutes);
+app.use("/reviews", reviewRoutes);
+app.use("/notifications", notificationRoutes);
+app.use("/instructor", instructorRoutes);
+app.use("/search", searchRoutes);
+app.use("/learning-paths", learningPathRoutes);
+app.use("/messages", messageRoutes);
 
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
 
