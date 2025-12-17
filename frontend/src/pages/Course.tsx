@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import type { Course, Lesson, Module, CourseProgress } from "../types";
+import type { Course, Lesson, Module, CourseProgress, LessonComment } from "../types";
 import VideoPlayer from "../components/VideoPlayer";
+import QuizComponent from "../components/Quiz";
 
 type CourseResponse = Course & {
   modules: (Module & { lessons: Lesson[] })[];
@@ -20,14 +21,26 @@ export default function CoursePage() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<CourseProgress | null>(null);
   const [currentLessonProgress, setCurrentLessonProgress] = useState<boolean>(false);
+  const [comments, setComments] = useState<LessonComment[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyContent, setReplyContent] = useState("");
+  const [editingComment, setEditingComment] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [currentModuleId, setCurrentModuleId] = useState<string | null>(null);
+  const [certificate, setCertificate] = useState<{ id: string; pdfUrl: string } | null>(null);
+  const [certificateLoading, setCertificateLoading] = useState(false);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    // Resetar estado quando o ID mudar
     setCourse(null);
     setCurrentLesson(null);
     setIsEnrolled(false);
     setError(null);
     setLoading(true);
+    setCertificate(null);
+    setCertificateLoading(false);
 
     async function fetchCourse() {
       if (!id) {
@@ -45,7 +58,6 @@ export default function CoursePage() {
         const firstLesson = courseRes.data.modules?.[0]?.lessons?.[0] ?? null;
         setCurrentLesson(firstLesson || null);
 
-        // Verificar se está matriculado
         let enrolled = false;
         if (user?.role === "STUDENT" && enrollmentsRes.data) {
           enrolled = enrollmentsRes.data.some((e: any) => e.courseId === id);
@@ -56,14 +68,22 @@ export default function CoursePage() {
           setIsEnrolled(true);
         }
 
-        // Carregar progresso se estiver matriculado
         if (enrolled || user?.role === "INSTRUCTOR" || user?.role === "ADMIN") {
           try {
-            const progressRes = await api.get<CourseProgress>(`/progress/course/${id}`);
+            const [progressRes, certificatesRes] = await Promise.all([
+              api.get<CourseProgress>(`/progress/course/${id}`),
+              user?.role === "STUDENT" ? api.get("/certificates/my").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+            ]);
             setProgress(progressRes.data);
-          } catch (progressErr) {
-            // Progresso pode não existir ainda, não é erro crítico
-            console.warn("Erro ao carregar progresso:", progressErr);
+            
+            if (certificatesRes.data && Array.isArray(certificatesRes.data)) {
+              const courseCert = certificatesRes.data.find((cert: any) => cert.courseId === id);
+              if (courseCert) {
+                setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
+              }
+            }
+              } catch (progressErr) {
+                console.warn("Erro ao carregar progresso:", progressErr);
           }
         }
       } catch (err: any) {
@@ -75,7 +95,6 @@ export default function CoursePage() {
     fetchCourse();
   }, [id, user]);
 
-  // Carregar progresso da aula atual quando mudar
   useEffect(() => {
     if (!currentLesson || !currentLesson.id || !isEnrolled) {
       setCurrentLessonProgress(false);
@@ -95,13 +114,64 @@ export default function CoursePage() {
     fetchLessonProgress();
   }, [currentLesson?.id, isEnrolled]);
 
-  // Atualizar progresso quando mudar a aula atual
   useEffect(() => {
     if (progress && currentLesson?.id) {
       const lessonProgress = progress.lessons.find((l) => l.lessonId === currentLesson.id);
       setCurrentLessonProgress(lessonProgress?.completed || false);
     }
   }, [currentLesson?.id, progress]);
+
+  useEffect(() => {
+    if (!currentLesson || !course || !progress || !isEnrolled) {
+      setShowQuiz(false);
+      return;
+    }
+
+    // Encontrar o módulo da aula atual
+    const module = course.modules?.find((mod) =>
+      mod.lessons?.some((lesson) => lesson.id === currentLesson.id)
+    );
+
+    if (!module) {
+      setShowQuiz(false);
+      return;
+    }
+
+    const moduleLessons = module.lessons || [];
+    const allLessonsCompleted = moduleLessons.every((lesson) => {
+      const lessonProgress = progress.lessons.find((l) => l.lessonId === lesson.id);
+      return lessonProgress?.completed || false;
+    });
+
+    const isLastLesson = moduleLessons[moduleLessons.length - 1]?.id === currentLesson.id;
+
+    if (allLessonsCompleted && isLastLesson) {
+      setCurrentModuleId(module.id);
+      setShowQuiz(true);
+    } else {
+      setShowQuiz(false);
+    }
+  }, [currentLesson, course, progress, isEnrolled]);
+
+  useEffect(() => {
+    if (!currentLesson || !currentLesson.id || !isEnrolled) {
+      setComments([]);
+      return;
+    }
+
+    const lessonId = currentLesson.id;
+    async function fetchComments() {
+      try {
+        const res = await api.get<LessonComment[]>(`/comments/lesson/${lessonId}`);
+        setComments(res.data);
+      } catch (err) {
+        console.warn("Erro ao carregar comentários:", err);
+        setComments([]);
+      }
+    }
+
+    fetchComments();
+  }, [currentLesson?.id, isEnrolled]);
 
   const handleEnroll = async () => {
     if (!id) return;
@@ -130,17 +200,178 @@ export default function CoursePage() {
         setCurrentLessonProgress(false);
       } else {
         await api.post("/progress/complete", { lessonId: currentLesson.id });
-        setCurrentLessonProgress(true);
-      }
+          setCurrentLessonProgress(true);
+        }
 
-      // Atualizar progresso do curso
-      if (id) {
-        const progressRes = await api.get<CourseProgress>(`/progress/course/${id}`);
-        setProgress(progressRes.data);
+        if (id) {
+        const [progressRes, certificatesRes] = await Promise.all([
+          api.get<CourseProgress>(`/progress/course/${id}`),
+          api.get("/certificates/my").catch(() => ({ data: [] })),
+            ]);
+            setProgress(progressRes.data);
+            
+            if (certificatesRes.data && Array.isArray(certificatesRes.data)) {
+          const courseCert = certificatesRes.data.find((cert: any) => cert.courseId === id);
+          if (courseCert) {
+            setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
+          } else {
+                    setCertificate(null);
+                  }
+                }
+                
+                if (progressRes.data.progressPercentage === 100 && !certificate) {
+          try {
+            const certRes = await api.post("/certificates/generate", { courseId: id });
+            if (certRes.data.pdfUrl) {
+              // Recarregar certificados
+              const certsRes = await api.get("/certificates/my");
+              const courseCert = certsRes.data.find((cert: any) => cert.courseId === id);
+              if (courseCert) {
+                setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
+              }
+            }
+          } catch (certErr: any) {
+            // Se o erro for que o curso não foi completado, não mostrar erro
+            // Outros erros podem ser mostrados
+            if (certErr.response?.status !== 400 || !certErr.response?.data?.error?.includes("completado")) {
+              console.warn("Erro ao gerar certificado:", certErr);
+            }
+            // Tentar recarregar certificados de qualquer forma (pode ter sido gerado pelo backend)
+            try {
+              const certsRes = await api.get("/certificates/my");
+              const courseCert = certsRes.data.find((cert: any) => cert.courseId === id);
+              if (courseCert) {
+                setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
+              }
+            } catch (e) {
+              // Ignorar erro ao recarregar
+            }
+          }
+        }
       }
     } catch (err: any) {
       alert(err.response?.data?.error || "Erro ao atualizar progresso");
     }
+  };
+
+  const handleDownloadCertificate = () => {
+    if (certificate) {
+      const API_URL = api.defaults.baseURL || "http://localhost:4000";
+      window.open(`${API_URL}${certificate.pdfUrl}`, "_blank");
+    }
+  };
+
+  const handleDeleteCertificate = async () => {
+    if (!certificate || !id) return;
+    
+    if (!confirm("Tem certeza que deseja deletar este certificado? Você poderá gerar um novo depois.")) {
+      return;
+    }
+
+    try {
+      await api.delete(`/certificates/${certificate.id}`);
+      setCertificate(null);
+      alert("Certificado deletado com sucesso!");
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Erro ao deletar certificado");
+    }
+  };
+
+  const handleSubmitComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentLesson?.id || !newComment.trim()) return;
+
+    try {
+      await api.post("/comments", {
+        lessonId: currentLesson.id,
+        content: newComment.trim(),
+          });
+          setNewComment("");
+          const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
+      setComments(res.data);
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Erro ao adicionar comentário");
+    }
+  };
+
+  const handleSubmitReply = async (parentId: string) => {
+    if (!replyContent.trim() || !currentLesson?.id) return;
+
+    try {
+      await api.post("/comments", {
+        lessonId: currentLesson.id,
+        content: replyContent.trim(),
+        parentId,
+          });
+          setReplyContent("");
+          setReplyingTo(null);
+          const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
+      setComments(res.data);
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Erro ao responder comentário");
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!confirm("Tem certeza que deseja deletar este comentário?")) return;
+
+        try {
+          await api.delete(`/comments/${commentId}`);
+          if (currentLesson?.id) {
+        const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
+        setComments(res.data);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Erro ao deletar comentário");
+    }
+  };
+
+  const handleEditComment = (comment: LessonComment) => {
+      setEditingComment(comment.id);
+      setEditContent(comment.content);
+      setReplyingTo(null);
+    };
+
+  const handleUpdateComment = async (commentId: string) => {
+    if (!editContent.trim()) return;
+
+    try {
+      await api.put(`/comments/${commentId}`, {
+        content: editContent.trim(),
+          });
+          setEditingComment(null);
+          setEditContent("");
+          if (currentLesson?.id) {
+        const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
+        setComments(res.data);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Erro ao atualizar comentário");
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingComment(null);
+    setEditContent("");
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    
+    if (days === 0) {
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      if (hours === 0) {
+        const minutes = Math.floor(diff / (1000 * 60));
+        return `${minutes} min atrás`;
+      }
+      return `${hours}h atrás`;
+    }
+    if (days === 1) return "Ontem";
+    if (days < 7) return `${days} dias atrás`;
+    return date.toLocaleDateString("pt-BR");
   };
 
   const isInstructor = user?.role === "INSTRUCTOR" || user?.role === "ADMIN";
@@ -186,14 +417,14 @@ export default function CoursePage() {
         </div>
         {currentLesson ? (
           <>
-            <VideoPlayer videoUrl={currentLesson.videoUrl} />
-            {currentLesson.description && (
+            {!showQuiz && <VideoPlayer videoUrl={currentLesson.videoUrl} />}
+            {!showQuiz && currentLesson.description && (
               <div className="lesson-description">
                 <h3>Descrição</h3>
                 <p>{currentLesson.description}</p>
               </div>
             )}
-            {isEnrolled && user?.role === "STUDENT" && (
+            {!showQuiz && isEnrolled && user?.role === "STUDENT" && (
               <div className="lesson-actions">
                 <button
                   onClick={handleToggleLessonComplete}
@@ -201,6 +432,209 @@ export default function CoursePage() {
                 >
                   {currentLessonProgress ? "✓ Aula Concluída" : "Marcar como Concluída"}
                 </button>
+              </div>
+            )}
+            {showQuiz && currentModuleId && (
+              <div className="quiz-section">
+                <QuizComponent
+                  moduleId={currentModuleId}
+                  onComplete={() => {
+                    // Não mostrar alert - a informação já está na tela do quiz
+                    // Não fechar o quiz - deixar o usuário ver os resultados
+                    // setShowQuiz(false); // Removido para manter o quiz visível
+                  }}
+                />
+              </div>
+            )}
+            {!showQuiz && isEnrolled && (
+              <div className="comments-section">
+                <h3>Comentários ({comments.length})</h3>
+                <form onSubmit={handleSubmitComment} className="comment-form">
+                  <textarea
+                    ref={commentInputRef}
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Adicione um comentário..."
+                    rows={3}
+                    className="comment-input"
+                  />
+                  <button type="submit" className="btn-primary" disabled={!newComment.trim()}>
+                    Comentar
+                  </button>
+                </form>
+                <div className="comments-list">
+                  {comments.length === 0 ? (
+                    <p className="muted">Nenhum comentário ainda. Seja o primeiro a comentar!</p>
+                  ) : (
+                    comments.map((comment) => (
+                      <div key={comment.id} className="comment-item">
+                        <div className="comment-header">
+                          <div className="comment-author">
+                            {comment.user.avatarUrl ? (
+                              <img src={comment.user.avatarUrl} alt={comment.user.name} className="comment-avatar" />
+                            ) : (
+                              <div className="comment-avatar-placeholder">
+                                {comment.user.name.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div>
+                              <strong>{comment.user.name}</strong>
+                              <span className="comment-date">{formatDate(comment.createdAt)}</span>
+                            </div>
+                          </div>
+                          {comment.user.id === user?.id && (
+                            <div className="comment-actions">
+                              <button
+                                onClick={() => handleEditComment(comment)}
+                                className="btn-secondary"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => handleDeleteComment(comment.id)}
+                                className="btn-danger-small"
+                              >
+                                Deletar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {editingComment === comment.id ? (
+                          <div className="edit-comment-form">
+                            <textarea
+                              value={editContent}
+                              onChange={(e) => setEditContent(e.target.value)}
+                              rows={3}
+                              className="comment-input"
+                            />
+                            <div className="edit-actions">
+                              <button
+                                onClick={handleCancelEdit}
+                                className="btn-secondary"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() => handleUpdateComment(comment.id)}
+                                className="btn-primary"
+                                disabled={!editContent.trim()}
+                              >
+                                Salvar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="comment-content">{comment.content}</p>
+                            {!replyingTo && editingComment !== comment.id && (
+                              <button
+                                onClick={() => setReplyingTo(comment.id)}
+                                className="btn-link"
+                              >
+                                Responder
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {replyingTo === comment.id && (
+                          <div className="reply-form">
+                            <textarea
+                              value={replyContent}
+                              onChange={(e) => setReplyContent(e.target.value)}
+                              placeholder="Escreva uma resposta..."
+                              rows={2}
+                              className="comment-input"
+                            />
+                            <div className="reply-actions">
+                              <button
+                                onClick={() => {
+                                  setReplyingTo(null);
+                                  setReplyContent("");
+                                }}
+                                className="btn-secondary"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() => handleSubmitReply(comment.id)}
+                                className="btn-primary"
+                                disabled={!replyContent.trim()}
+                              >
+                                Responder
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {comment.replies && comment.replies.length > 0 && (
+                          <div className="replies-list">
+                            {comment.replies.map((reply) => (
+                              <div key={reply.id} className="reply-item">
+                                <div className="comment-header">
+                                  <div className="comment-author">
+                                    {reply.user.avatarUrl ? (
+                                      <img src={reply.user.avatarUrl} alt={reply.user.name} className="comment-avatar" />
+                                    ) : (
+                                      <div className="comment-avatar-placeholder">
+                                        {reply.user.name.charAt(0).toUpperCase()}
+                                      </div>
+                                    )}
+                                    <div>
+                                      <strong>{reply.user.name}</strong>
+                                      <span className="comment-date">{formatDate(reply.createdAt)}</span>
+                                    </div>
+                                  </div>
+                                  {reply.user.id === user?.id && (
+                                    <div className="comment-actions">
+                                      <button
+                                        onClick={() => handleEditComment(reply)}
+                                        className="btn-secondary"
+                                      >
+                                        Editar
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteComment(reply.id)}
+                                        className="btn-danger-small"
+                                      >
+                                        Deletar
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                                {editingComment === reply.id ? (
+                                  <div className="edit-comment-form">
+                                    <textarea
+                                      value={editContent}
+                                      onChange={(e) => setEditContent(e.target.value)}
+                                      rows={3}
+                                      className="comment-input"
+                                    />
+                                    <div className="edit-actions">
+                                      <button
+                                        onClick={handleCancelEdit}
+                                        className="btn-secondary"
+                                      >
+                                        Cancelar
+                                      </button>
+                                      <button
+                                        onClick={() => handleUpdateComment(reply.id)}
+                                        className="btn-primary"
+                                        disabled={!editContent.trim()}
+                                      >
+                                        Salvar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="comment-content">{reply.content}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </>
@@ -240,6 +674,68 @@ export default function CoursePage() {
               <p className="progress-text">
                 {progress.completedLessons} de {progress.totalLessons} aulas concluídas
               </p>
+              {progress.progressPercentage === 100 && certificate && (
+                <div className="certificate-section">
+                  <div className="certificate-badge">
+                    <span>🏆</span>
+                    <div>
+                      <strong>Certificado Disponível!</strong>
+                      <small>Você completou este curso com sucesso</small>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", flexDirection: "column" }}>
+                    <button
+                      onClick={handleDownloadCertificate}
+                      className="btn-primary"
+                    >
+                      📥 Baixar Certificado
+                    </button>
+                    <button
+                      onClick={handleDeleteCertificate}
+                      className="btn-secondary"
+                      style={{ fontSize: "0.9em" }}
+                    >
+                      🗑️ Deletar Certificado
+                    </button>
+                  </div>
+                </div>
+              )}
+              {progress.progressPercentage === 100 && !certificate && (
+                <div className="certificate-section">
+                  <div className="certificate-badge">
+                    <span>🎉</span>
+                    <div>
+                      <strong>Parabéns! Curso Concluído!</strong>
+                      <small>Clique no botão abaixo para gerar seu certificado</small>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!id) return;
+                      try {
+                        setCertificateLoading(true);
+                        const certRes = await api.post("/certificates/generate", { courseId: id });
+                        if (certRes.data.pdfUrl) {
+                          const certsRes = await api.get("/certificates/my");
+                          const courseCert = certsRes.data.find((cert: any) => cert.courseId === id);
+                          if (courseCert) {
+                            setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
+                            alert("🎉 Certificado gerado com sucesso!");
+                          }
+                        }
+                      } catch (err: any) {
+                        alert(err.response?.data?.error || "Erro ao gerar certificado. Verifique se todas as aulas foram concluídas.");
+                      } finally {
+                        setCertificateLoading(false);
+                      }
+                    }}
+                    className="btn-primary"
+                    disabled={certificateLoading}
+                  >
+                    {certificateLoading ? "Gerando..." : "Gerar Certificado Agora"}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

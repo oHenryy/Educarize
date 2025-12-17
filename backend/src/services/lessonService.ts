@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { logActivity } from "../utils/activityLogger";
 
 export class LessonService {
   async listByModule(moduleId: string) {
@@ -87,7 +88,7 @@ export class LessonService {
       throw new Error("Sem permissão para criar aula neste módulo");
     }
 
-    return await prisma.lesson.create({
+    const lesson = await prisma.lesson.create({
       data: {
         title: data.title,
         description: data.description,
@@ -133,7 +134,7 @@ export class LessonService {
       throw new Error("Sem permissão para editar esta aula");
     }
 
-    return await prisma.lesson.update({
+    const updated = await prisma.lesson.update({
       where: { id },
       data: {
         ...(data.title && { title: data.title }),
@@ -143,6 +144,16 @@ export class LessonService {
         ...(data.order !== undefined && { order: data.order }),
       },
     });
+
+    await logActivity({
+      action: "LESSON_UPDATED",
+      description: `Aula "${updated.title}" atualizada`,
+      resourceId: updated.id,
+      resourceType: "LESSON",
+      userId,
+    });
+
+    return updated;
   }
 
   async delete(id: string, userId: string, userRole: string) {
@@ -163,7 +174,16 @@ export class LessonService {
       throw new Error("Sem permissão para deletar esta aula");
     }
 
+    const lessonTitle = lesson.title;
     await prisma.lesson.delete({ where: { id } });
+
+    await logActivity({
+      action: "LESSON_DELETED",
+      description: `Aula "${lessonTitle}" deletada`,
+      resourceId: id,
+      resourceType: "LESSON",
+      userId,
+    });
   }
 
   async addAttachment(

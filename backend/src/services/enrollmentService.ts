@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { logActivity } from "../utils/activityLogger";
 
 export class EnrollmentService {
   async enroll(userId: string, courseId: string) {
@@ -29,7 +30,7 @@ export class EnrollmentService {
       throw new Error("Você já está matriculado neste curso");
     }
 
-    return await prisma.enrollment.create({
+    const enrollment = await prisma.enrollment.create({
       data: { userId, courseId },
       include: {
         course: {
@@ -48,6 +49,17 @@ export class EnrollmentService {
         },
       },
     });
+
+    // Log de atividade
+    await logActivity({
+      action: "ENROLLMENT_CREATED",
+      description: `Matrícula no curso "${enrollment.course.title}"`,
+      resourceId: enrollment.id,
+      resourceType: "ENROLLMENT",
+      userId,
+    });
+
+    return enrollment;
   }
 
   async getMyEnrollments(userId: string) {
@@ -92,10 +104,24 @@ export class EnrollmentService {
       throw new Error("Matrícula não encontrada");
     }
 
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { title: true },
+    });
+
     await prisma.enrollment.delete({
       where: {
         userId_courseId: { userId, courseId },
       },
+    });
+
+    // Log de atividade
+    await logActivity({
+      action: "ENROLLMENT_DELETED",
+      description: `Matrícula cancelada no curso "${course?.title || courseId}"`,
+      resourceId: courseId,
+      resourceType: "ENROLLMENT",
+      userId,
     });
   }
 }

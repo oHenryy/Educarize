@@ -14,20 +14,18 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Interceptor de resposta para tratar erros de autenticação
 api.interceptors.response.use(
   (response) => {
-    // Retornar resposta bem-sucedida normalmente
     return response;
   },
   (error) => {
-    // Se for erro 401, redirecionar para login
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("educarize_auth");
-      window.location.href = "/login";
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
     }
-    // Rejeitar o erro para que seja tratado no catch
     return Promise.reject(error);
   }
 );

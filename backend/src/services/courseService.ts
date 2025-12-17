@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { logActivity } from "../utils/activityLogger";
 
 export interface CourseFilters {
   categoryId?: string;
@@ -129,7 +130,6 @@ export class CourseService {
   }
 
   async createCourse(data: CreateCourseData) {
-    // Validar categoria se fornecida
     let finalCategoryId: string | null = null;
     if (data.categoryId && data.categoryId.trim() !== "") {
       const category = await prisma.courseCategory.findUnique({
@@ -143,7 +143,6 @@ export class CourseService {
       finalCategoryId = data.categoryId;
     }
 
-    // Validar dificuldade
     const validDifficulties = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
     const finalDifficulty =
       data.difficulty && validDifficulties.includes(data.difficulty)
@@ -174,6 +173,14 @@ export class CourseService {
         },
       });
 
+      await logActivity({
+        action: "COURSE_CREATED",
+        description: `Curso "${course.title}" criado`,
+        resourceId: course.id,
+        resourceType: "COURSE",
+        userId: data.instructorId,
+      });
+
       return course;
     } catch (error: any) {
       if (error.code === "P2003") {
@@ -197,7 +204,6 @@ export class CourseService {
       throw new Error("Sem permissão para editar este curso");
     }
 
-    // Validar categoria se fornecida
     let finalCategoryId: string | null | undefined = undefined;
     if (data.categoryId !== undefined) {
       if (data.categoryId === null || data.categoryId === "" || data.categoryId.trim() === "") {
@@ -215,7 +221,6 @@ export class CourseService {
       }
     }
 
-    // Validar dificuldade se fornecida
     let finalDifficulty: string | undefined = undefined;
     if (data.difficulty) {
       const validDifficulties = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
@@ -226,7 +231,6 @@ export class CourseService {
       }
     }
 
-    // Validar status se fornecido
     let finalStatus: string | undefined = undefined;
     if (data.status) {
       const validStatuses = ["DRAFT", "PUBLISHED", "ARCHIVED", "SUSPENDED"];
@@ -284,8 +288,17 @@ export class CourseService {
       throw new Error("Sem permissão para deletar este curso");
     }
 
+    const courseTitle = course.title;
     await prisma.course.delete({
       where: { id },
+    });
+
+    await logActivity({
+      action: "COURSE_DELETED",
+      description: `Curso "${courseTitle}" deletado`,
+      resourceId: id,
+      resourceType: "COURSE",
+      userId,
     });
   }
 

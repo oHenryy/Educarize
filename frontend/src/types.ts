@@ -57,3 +57,60 @@ export interface CourseProgress {
   lessons: LessonProgress[];
 }
 
+export interface LessonComment {
+  id: string;
+  content: string;
+  parentId?: string | null;
+  userId: string;
+  lessonId: string;
+  createdAt: string;
+  updatedAt: string;
+  user: Pick<User, "id" | "name" | "avatarUrl">;
+  replies?: LessonComment[];
+}
+
+export interface QuizQuestion {
+  id: string;
+  question: string;
+  type: string;
+  options: string[];
+  correctAnswer: number;
+  order: number;
+}
+
+export interface Quiz {
+  id: string;
+  title: string;
+  description?: string | null;
+  passingScore: number;
+  moduleId: string;
+  questions: QuizQuestion[];
+}
+
+export interface QuizAttempt {
+  id: string;
+  userId: string;
+  quizId: string;
+  answers: { [questionId: string]: number };
+  score: number;
+  passed: boolean;
+  completedAt: string;
+}
+
+export interface Certificate {
+  id: string;
+  pdfUrl: string;
+  userId: string;
+  courseId: string;
+  issuedAt: string;
+  course?: {
+    id: string;
+    title: string;
+    coverImageUrl?: string | null;
+    durationHours: number;
+    instructor: {
+      name: string;
+    };
+  };
+}
+

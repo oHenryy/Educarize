@@ -13,7 +13,6 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
       return;
     }
 
-    // Detectar YouTube
     const youtubeRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
     const youtubeMatch = videoUrl.match(youtubeRegex);
     if (youtubeMatch) {
@@ -22,7 +21,6 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
       return;
     }
 
-    // Detectar Vimeo
     const vimeoRegex = /(?:vimeo\.com\/)(?:.*\/)?(\d+)/;
     const vimeoMatch = videoUrl.match(vimeoRegex);
     if (vimeoMatch) {
@@ -31,7 +29,6 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
       return;
     }
 
-    // Se não for YouTube nem Vimeo, tentar usar a URL diretamente
     setEmbedUrl(videoUrl);
   }, [videoUrl]);
 

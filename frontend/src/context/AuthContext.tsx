@@ -19,14 +19,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Restaurar autenticação do localStorage
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       try {
         const parsed = JSON.parse(raw) as { user: User; token: string };
         setUser(parsed.user);
         setToken(parsed.token);
-        // Garantir que o token também está no localStorage para o axios interceptor
         localStorage.setItem("token", parsed.token);
       } catch {
         localStorage.removeItem(STORAGE_KEY);
@@ -40,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(data.user);
     setToken(data.token);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    localStorage.setItem("token", data.token); // usado pelo axios interceptor
+    localStorage.setItem("token", data.token);
   };
 
   const logout = () => {

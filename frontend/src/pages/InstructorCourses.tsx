@@ -12,7 +12,6 @@ export default function InstructorCoursesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Resetar estado
     setCourses([]);
     setError(null);
     setLoading(true);
@@ -25,7 +24,6 @@ export default function InstructorCoursesPage() {
     async function fetchCourses() {
       try {
         const { data } = await api.get<Course[]>("/courses");
-        // Filtrar apenas cursos do instrutor (ou todos se for admin)
         const myCourses = user?.role === "ADMIN" 
           ? data 
           : data.filter(c => c.instructor?.id === user?.id);

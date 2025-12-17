@@ -25,6 +25,7 @@ model User {
   comments          LessonComment[]
   certificates      Certificate[]
   quizAttempts      QuizAttempt[]
+  activityLogs      ActivityLog[]
 }
 
 model CourseCategory {
@@ -244,6 +245,29 @@ model Certificate {
   @@unique([userId, courseId])
   @@index([userId])
   @@index([courseId])
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  /// Tipo de atividade: 'COURSE_CREATED', 'COURSE_UPDATED', 'COURSE_DELETED', 'LESSON_CREATED', 'LESSON_UPDATED', 'LESSON_DELETED', 'MODULE_CREATED', 'MODULE_UPDATED', 'MODULE_DELETED', 'USER_CREATED', 'USER_UPDATED', 'USER_DELETED', 'ENROLLMENT_CREATED', 'ENROLLMENT_DELETED', 'QUIZ_CREATED', 'QUIZ_UPDATED', 'QUIZ_DELETED', 'CERTIFICATE_GENERATED'
+  action      String
+  /// Descrição da atividade
+  description String?
+  /// ID do recurso relacionado (curso, aula, usuário, etc)
+  resourceId  String?
+  /// Tipo do recurso: 'COURSE', 'LESSON', 'MODULE', 'USER', 'ENROLLMENT', 'QUIZ', 'CERTIFICATE'
+  resourceType String?
+  
+  userId      String?
+  createdAt   DateTime @default(now())
+  
+  // Relações
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType])
+  @@index([createdAt])
 }
 
 

@@ -35,7 +35,6 @@ export default function CourseFormPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Resetar estado quando mudar de criar para editar ou vice-versa
     setFormData({
       title: "",
       description: "",
@@ -63,7 +62,6 @@ export default function CourseFormPage() {
           const courseRes = await api.get(`/courses/${id}`);
           const course = courseRes.data;
           
-          // Verificar permissão
           if (course.instructor?.id !== user?.id && user?.role !== "ADMIN") {
             navigate("/instructor/courses");
             return;

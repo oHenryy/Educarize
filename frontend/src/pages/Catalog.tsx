@@ -12,7 +12,6 @@ export default function CatalogPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Filtros
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState<string>("");
@@ -20,7 +19,6 @@ export default function CatalogPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        // Buscar cursos publicados
         const params: any = { status: "PUBLISHED" };
         if (selectedCategory) params.categoryId = selectedCategory;
         if (selectedDifficulty) params.difficulty = selectedDifficulty;

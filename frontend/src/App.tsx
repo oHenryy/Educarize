@@ -10,12 +10,16 @@ import InstructorCoursesPage from "./pages/InstructorCourses";
 import CourseStudentsPage from "./pages/CourseStudents";
 import CourseFormPage from "./pages/CourseForm";
 import CourseContentPage from "./pages/CourseContent";
+import AdminDashboardPage from "./pages/AdminDashboard";
+import AdminUsersPage from "./pages/AdminUsers";
+import AdminActivityLogsPage from "./pages/AdminActivityLogs";
+import AdminCategoriesPage from "./pages/AdminCategories";
+import ProfilePage from "./pages/Profile";
 
 function ProtectedRoute({ children }: { children: ReactElement }) {
   const { token, loading } = useAuth();
   const location = useLocation();
   
-  // Aguardar o carregamento inicial antes de verificar autenticação
   if (loading) {
     return <div className="loading">Carregando...</div>;
   }
@@ -23,6 +27,29 @@ function ProtectedRoute({ children }: { children: ReactElement }) {
   if (!token) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
+  return children;
+}
+
+function AdminRoute({ children }: { children: ReactElement }) {
+  const { token, user, loading } = useAuth();
+  const location = useLocation();
+  
+  if (loading) {
+    return <div className="loading">Carregando...</div>;
+  }
+  
+  if (!token) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  
+  if (!user) {
+    return <div className="loading">Carregando usuário...</div>;
+  }
+  
+  if (user.role !== "ADMIN") {
+    return <Navigate to="/catalog" replace />;
+  }
+  
   return children;
 }
 
@@ -44,6 +71,17 @@ function Layout({ children }: { children: ReactNode }) {
           {isLogged && <Link to="/catalog">Catálogo</Link>}
           {isLogged && (user?.role === "INSTRUCTOR" || user?.role === "ADMIN") && (
             <Link to="/instructor/courses">Meus Cursos</Link>
+          )}
+          {isLogged && user?.role === "ADMIN" && (
+            <>
+              <Link to="/admin/dashboard">Dashboard</Link>
+              <Link to="/admin/users">Usuários</Link>
+              <Link to="/admin/categories">Categorias</Link>
+              <Link to="/admin/activity-logs">Logs</Link>
+            </>
+          )}
+          {isLogged && (
+            <Link to="/profile">Perfil</Link>
           )}
         </nav>
         <div className="user-area">
@@ -133,6 +171,46 @@ function App() {
             element={
               <ProtectedRoute>
                 <CourseStudentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/dashboard"
+            element={
+              <AdminRoute>
+                <AdminDashboardPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <AdminRoute>
+                <AdminUsersPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/activity-logs"
+            element={
+              <AdminRoute>
+                <AdminActivityLogsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/categories"
+            element={
+              <AdminRoute>
+                <AdminCategoriesPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />

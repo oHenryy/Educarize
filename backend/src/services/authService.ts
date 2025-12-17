@@ -32,16 +32,13 @@ export class AuthService {
   async register(data: RegisterData): Promise<AuthResult> {
     const { name, email, password, role } = data;
 
-    // Verificar se email já existe
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new Error("Email já cadastrado");
     }
 
-    // Hash da senha
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Criar usuário
     const user = await prisma.user.create({
       data: {
         name,
@@ -51,7 +48,14 @@ export class AuthService {
       },
     });
 
-    // Gerar token
+    await logActivity({
+      action: "USER_CREATED",
+      description: `Usuário "${user.name}" (${user.email}) criado`,
+      resourceId: user.id,
+      resourceType: "USER",
+      userId: user.id,
+    });
+
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       config.jwtSecret,
@@ -73,19 +77,16 @@ export class AuthService {
   async login(data: LoginData): Promise<AuthResult> {
     const { email, password } = data;
 
-    // Buscar usuário
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       throw new Error("Credenciais inválidas");
     }
 
-    // Validar senha
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
       throw new Error("Credenciais inválidas");
     }
 
-    // Gerar token
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       config.jwtSecret,
@@ -122,6 +123,39 @@ export class AuthService {
     }
 
     return { user };
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new Error("Usuário não encontrado");
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValid) {
+      throw new Error("Senha atual incorreta");
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+  }
+
+  async resetPassword(userId: string, newPassword: string): Promise<void> {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new Error("Usuário não encontrado");
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
   }
 }
 

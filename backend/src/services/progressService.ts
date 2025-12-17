@@ -1,8 +1,8 @@
 import { prisma } from "../config/database";
+import { CertificateService } from "./certificateService";
 
 export class ProgressService {
   async markLessonCompleted(userId: string, lessonId: string) {
-    // Verificar se já existe progresso
     const existing = await prisma.userProgress.findUnique({
       where: {
         userId_lessonId: {
@@ -12,10 +12,12 @@ export class ProgressService {
       },
     });
 
+    const certificateService = new CertificateService();
+    let progress;
+
     if (existing) {
-      // Atualizar para concluído se ainda não estiver
       if (!existing.completed) {
-        return await prisma.userProgress.update({
+        progress = await prisma.userProgress.update({
           where: {
             userId_lessonId: {
               userId,
@@ -27,19 +29,41 @@ export class ProgressService {
             completedAt: new Date(),
           },
         });
+      } else {
+        progress = existing;
+        return progress;
       }
-      return existing;
+    } else {
+      progress = await prisma.userProgress.create({
+        data: {
+          userId,
+          lessonId,
+          completed: true,
+          completedAt: new Date(),
+        },
+      });
     }
 
-    // Criar novo progresso
-    return await prisma.userProgress.create({
-      data: {
-        userId,
-        lessonId,
-        completed: true,
-        completedAt: new Date(),
-      },
-    });
+    try {
+      const lesson = await prisma.lesson.findUnique({
+        where: { id: lessonId },
+        include: {
+          module: {
+            select: {
+              courseId: true,
+            },
+          },
+        },
+      });
+
+      if (lesson) {
+        await certificateService.checkAndGenerateCertificate(userId, lesson.module.courseId);
+      }
+    } catch (error) {
+      console.error("Erro ao verificar certificado:", error);
+    }
+
+    return progress;
   }
 
   async markLessonIncomplete(userId: string, lessonId: string) {
@@ -71,7 +95,6 @@ export class ProgressService {
   }
 
   async getCourseProgress(userId: string, courseId: string) {
-    // Buscar todas as aulas do curso
     const course = await prisma.course.findUnique({
       where: { id: courseId },
       include: {
@@ -87,7 +110,6 @@ export class ProgressService {
       throw new Error("Curso não encontrado");
     }
 
-    // Contar total de aulas
     const totalLessons = course.modules.reduce(
       (acc, mod) => acc + mod.lessons.length,
       0
@@ -102,7 +124,6 @@ export class ProgressService {
       };
     }
 
-    // Buscar progresso do usuário para todas as aulas
     const lessonIds = course.modules.flatMap((mod) =>
       mod.lessons.map((lesson) => lesson.id)
     );
@@ -122,7 +143,6 @@ export class ProgressService {
       (completedLessons / totalLessons) * 100
     );
 
-    // Mapear progresso por aula
     const lessonsProgress = lessonIds.map((lessonId) => {
       const lessonProgress = progress.find((p) => p.lessonId === lessonId);
       return {

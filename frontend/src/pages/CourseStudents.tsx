@@ -18,7 +18,6 @@ export default function CourseStudentsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Resetar estado quando o ID mudar
     setEnrollments([]);
     setCourseTitle("");
     setError(null);

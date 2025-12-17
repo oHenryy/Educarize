@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { logActivity } from "../utils/activityLogger";
 
 export class ModuleService {
   async listByCourse(courseId: string) {
@@ -29,7 +30,7 @@ export class ModuleService {
       throw new Error("Sem permissão para criar módulo neste curso");
     }
 
-    return await prisma.module.create({
+    const module = await prisma.module.create({
       data: {
         title: data.title,
         description: data.description,
@@ -42,6 +43,17 @@ export class ModuleService {
         },
       },
     });
+
+    // Log de atividade
+    await logActivity({
+      action: "MODULE_CREATED",
+      description: `Módulo "${module.title}" criado no curso "${module.course.title}"`,
+      resourceId: module.id,
+      resourceType: "MODULE",
+      userId,
+    });
+
+    return module;
   }
 
   async update(id: string, data: { title?: string; description?: string; order?: number }, userId: string, userRole: string) {
@@ -58,7 +70,7 @@ export class ModuleService {
       throw new Error("Sem permissão para editar este módulo");
     }
 
-    return await prisma.module.update({
+    const updated = await prisma.module.update({
       where: { id },
       data: {
         ...(data.title && { title: data.title }),
@@ -66,6 +78,17 @@ export class ModuleService {
         ...(data.order !== undefined && { order: data.order }),
       },
     });
+
+    // Log de atividade
+    await logActivity({
+      action: "MODULE_UPDATED",
+      description: `Módulo "${updated.title}" atualizado`,
+      resourceId: updated.id,
+      resourceType: "MODULE",
+      userId,
+    });
+
+    return updated;
   }
 
   async delete(id: string, userId: string, userRole: string) {
@@ -82,7 +105,16 @@ export class ModuleService {
       throw new Error("Sem permissão para deletar este módulo");
     }
 
+    const moduleTitle = module.title;
     await prisma.module.delete({ where: { id } });
+
+    await logActivity({
+      action: "MODULE_DELETED",
+      description: `Módulo "${moduleTitle}" deletado`,
+      resourceId: id,
+      resourceType: "MODULE",
+      userId,
+    });
   }
 }
 

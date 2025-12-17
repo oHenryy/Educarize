@@ -57,5 +57,27 @@ export class AuthController {
       }
     }
   }
+
+  async changePassword(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const { currentPassword, newPassword } = req.body;
+
+      if (!currentPassword || !newPassword) {
+        res.status(400).json({ error: "Senha atual e nova senha são obrigatórias" });
+        return;
+      }
+
+      if (newPassword.length < 6) {
+        res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres" });
+        return;
+      }
+
+      await authService.changePassword(userId, currentPassword, newPassword);
+      res.json({ message: "Senha alterada com sucesso" });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Erro ao alterar senha" });
+    }
+  }
 }
 
