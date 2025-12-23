@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api/client";
 import type { Quiz, QuizAttempt } from "../types";
+import { useToast } from "../context/ToastContext";
 
 const parseOptions = (options: any): string[] => {
   if (Array.isArray(options)) return options;
@@ -28,12 +29,12 @@ export default function QuizComponent({ moduleId, onComplete }: QuizProps) {
   const [error, setError] = useState<string | null>(null);
   const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     async function fetchQuiz() {
       try {
         const res = await api.get<Quiz>(`/quizzes/module/${moduleId}`);
-        // Garantir que options seja um array (parse caso necessário)
         const quizData = {
           ...res.data,
           questions: res.data.questions.map((q: any) => ({
@@ -42,7 +43,6 @@ export default function QuizComponent({ moduleId, onComplete }: QuizProps) {
           })),
         };
         setQuiz(quizData);
-        // Inicializar respostas vazias
         const initialAnswers: { [questionId: string]: number } = {};
         quizData.questions.forEach((q) => {
           initialAnswers[q.id] = -1;
@@ -89,10 +89,9 @@ export default function QuizComponent({ moduleId, onComplete }: QuizProps) {
   const handleSubmit = async () => {
     if (!quiz) return;
 
-    // Verificar se todas as questões foram respondidas
     const allAnswered = quiz.questions.every((q) => answers[q.id] !== -1);
     if (!allAnswered) {
-      alert("Por favor, responda todas as questões antes de enviar.");
+      showToast("Por favor, responda todas as questões antes de enviar.", "error");
       return;
     }
 
@@ -103,14 +102,13 @@ export default function QuizComponent({ moduleId, onComplete }: QuizProps) {
       });
       setAttempt(res.data);
       setSubmitted(true);
-      // Recarregar histórico
       const attemptsRes = await api.get<QuizAttempt[]>(`/quizzes/${quiz.id}/attempts`);
       setAttempts(attemptsRes.data);
       if (onComplete) {
         onComplete(res.data);
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao enviar quiz");
+      showToast(err.response?.data?.error || "Erro ao enviar quiz", "error");
     }
   };
 
@@ -160,7 +158,6 @@ export default function QuizComponent({ moduleId, onComplete }: QuizProps) {
               onClick={() => {
                 setSubmitted(false);
                 setAttempt(null);
-                // Resetar respostas
                 const initialAnswers: { [questionId: string]: number } = {};
                 quiz.questions.forEach((q) => {
                   initialAnswers[q.id] = -1;

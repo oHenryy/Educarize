@@ -3,12 +3,17 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import type { Course, CourseCategory } from "../types";
+import { PageHeader } from "../components/PageHeader";
+import { EmptyState } from "../components/EmptyState";
+import { useToast } from "../context/ToastContext";
 
 export default function CatalogPage() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [categories, setCategories] = useState<CourseCategory[]>([]);
   const [myEnrollments, setMyEnrollments] = useState<string[]>([]);
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -24,10 +29,11 @@ export default function CatalogPage() {
         if (selectedDifficulty) params.difficulty = selectedDifficulty;
         if (searchTerm) params.search = searchTerm;
 
-        const [coursesRes, categoriesRes, enrollmentsRes] = await Promise.all([
+        const [coursesRes, categoriesRes, enrollmentsRes, favoritesRes] = await Promise.all([
           api.get<Course[]>("/courses", { params }),
           api.get<CourseCategory[]>("/categories"),
           user?.role === "STUDENT" ? api.get("/enrollments/my") : Promise.resolve({ data: [] }),
+          user ? api.get("/favorites").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
         ]);
 
         setCourses(coursesRes.data);
@@ -36,6 +42,11 @@ export default function CatalogPage() {
         if (user?.role === "STUDENT" && enrollmentsRes.data) {
           const enrolledIds = enrollmentsRes.data.map((e: any) => e.courseId);
           setMyEnrollments(enrolledIds);
+        }
+        
+        if (favoritesRes.data && Array.isArray(favoritesRes.data)) {
+          const favoriteIds = favoritesRes.data.map((f: any) => f.courseId);
+          setFavorites(favoriteIds);
         }
       } catch (err: any) {
         setError(err.response?.data?.error || "Erro ao carregar dados");
@@ -53,27 +64,49 @@ export default function CatalogPage() {
     try {
       await api.post("/enrollments", { courseId });
       setMyEnrollments([...myEnrollments, courseId]);
-      alert("Matriculado com sucesso!");
+      showToast("Matriculado com sucesso!", "success");
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao se matricular");
+      showToast(err.response?.data?.error || "Erro ao se matricular", "error");
     }
   };
 
   const isEnrolled = (courseId: string) => myEnrollments.includes(courseId);
+  const isFavorite = (courseId: string) => favorites.includes(courseId);
+
+  const handleToggleFavorite = async (courseId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    try {
+      if (isFavorite(courseId)) {
+        await api.delete(`/favorites/${courseId}`);
+        setFavorites(favorites.filter((id) => id !== courseId));
+      } else {
+        await api.post("/favorites", { courseId });
+        setFavorites([...favorites, courseId]);
+      }
+    } catch (err: any) {
+      showToast(err.response?.data?.error || "Erro ao favoritar curso", "error");
+    }
+  };
 
   if (loading) return <div className="loading">Carregando cursos...</div>;
   if (error) return <p className="error">{error}</p>;
 
   return (
     <div className="catalog">
-      <div className="catalog-header">
-        <h2>Catálogo de Cursos</h2>
-        {user?.role === "INSTRUCTOR" || user?.role === "ADMIN" ? (
-          <Link to="/instructor/courses" className="btn-primary">
-            Meus Cursos
-          </Link>
-        ) : null}
-      </div>
+      <PageHeader
+        className="catalog-header"
+        title="Catálogo de Cursos"
+        subtitle="Explore os cursos disponíveis e matricule-se para começar a aprender."
+        actions={
+          (user?.role === "INSTRUCTOR" || user?.role === "ADMIN") ? (
+            <Link to="/instructor/courses" className="btn-primary">
+              Meus Cursos
+            </Link>
+          ) : null
+        }
+      />
 
       <div className="filters">
         <input
@@ -106,7 +139,10 @@ export default function CatalogPage() {
       </div>
 
       {courses.length === 0 && (
-        <p className="muted">Nenhum curso encontrado.</p>
+        <EmptyState
+          title="Nenhum curso encontrado"
+          description="Ajuste os filtros ou limpe a busca para ver mais opções de cursos."
+        />
       )}
       
       <div className="course-grid">
@@ -131,20 +167,30 @@ export default function CatalogPage() {
                 </small>
               </div>
             </Link>
-            {user?.role === "STUDENT" && (
-              <div className="course-actions">
-                {isEnrolled(course.id) ? (
-                  <span className="badge-enrolled">Matriculado</span>
-                ) : (
-                  <button
-                    onClick={(e) => handleEnroll(course.id, e)}
-                    className="btn-enroll"
-                  >
-                    Matricular-se
-                  </button>
-                )}
-              </div>
-            )}
+            <div className="course-actions">
+              <button
+                onClick={(e) => handleToggleFavorite(course.id, e)}
+                className={`btn-icon ${isFavorite(course.id) ? "favorited" : ""}`}
+                title={isFavorite(course.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                aria-label={isFavorite(course.id) ? "Remover curso dos favoritos" : "Adicionar curso aos favoritos"}
+              >
+                {isFavorite(course.id) ? "❤️" : "🤍"}
+              </button>
+              {user?.role === "STUDENT" && (
+                <>
+                  {isEnrolled(course.id) ? (
+                    <span className="badge-enrolled">Matriculado</span>
+                  ) : (
+                    <button
+                      onClick={(e) => handleEnroll(course.id, e)}
+                      className="btn-enroll"
+                    >
+                      Matricular-se
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         ))}
       </div>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { useToast } from "../context/ToastContext";
 
 interface User {
   id: string;
@@ -34,6 +35,7 @@ export default function AdminUsersPage() {
   const [newRole, setNewRole] = useState("");
   const [resettingPassword, setResettingPassword] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const { showToast } = useToast();
 
   useEffect(() => {
     async function fetchUsers() {
@@ -64,7 +66,7 @@ export default function AdminUsersPage() {
 
     try {
       await api.put(`/admin/users/${userId}/role`, { role: newRole });
-      alert("Papel atualizado com sucesso!");
+      showToast("Papel atualizado com sucesso!", "success");
       setEditingUser(null);
       setNewRole("");
       const params: any = { page, limit: 20 };
@@ -72,13 +74,13 @@ export default function AdminUsersPage() {
       const res = await api.get<UsersResponse>("/admin/users", { params });
       setUsers(res.data);
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao atualizar papel");
+      showToast(err.response?.data?.error || "Erro ao atualizar papel", "error");
     }
   };
 
   const handleResetPassword = async (userId: string) => {
     if (!newPassword || newPassword.length < 6) {
-      alert("A senha deve ter pelo menos 6 caracteres");
+      showToast("A senha deve ter pelo menos 6 caracteres", "error");
       return;
     }
 
@@ -90,11 +92,11 @@ export default function AdminUsersPage() {
       await api.put(`/admin/users/${userId}/reset-password`, {
         newPassword,
       });
-      alert("Senha resetada com sucesso!");
+      showToast("Senha resetada com sucesso!", "success");
       setResettingPassword(null);
       setNewPassword("");
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao resetar senha");
+      showToast(err.response?.data?.error || "Erro ao resetar senha", "error");
     }
   };
 
@@ -105,14 +107,13 @@ export default function AdminUsersPage() {
 
     try {
       await api.delete(`/admin/users/${userId}`);
-      alert("Usuário deletado com sucesso!");
-      // Recarregar usuários
+      showToast("Usuário deletado com sucesso!", "success");
       const params: any = { page, limit: 20 };
       if (search) params.search = search;
       const res = await api.get<UsersResponse>("/admin/users", { params });
       setUsers(res.data);
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao deletar usuário");
+      showToast(err.response?.data?.error || "Erro ao deletar usuário", "error");
     }
   };
 
@@ -130,7 +131,17 @@ export default function AdminUsersPage() {
 
   return (
     <div className="admin-users">
-      <h1>Gestão de Usuários</h1>
+      <header className="page-header">
+        <div>
+          <h1>Gestão de Usuários</h1>
+          <p className="muted">
+            Visualize, filtre e gerencie os usuários da plataforma, incluindo papéis e redefinição de senha.
+          </p>
+        </div>
+        <div className="users-info">
+          Total: {users.pagination.total} usuários
+        </div>
+      </header>
 
       <div className="users-header">
         <div className="search-box">
@@ -143,9 +154,6 @@ export default function AdminUsersPage() {
               setPage(1);
             }}
           />
-        </div>
-        <div className="users-info">
-          Total: {users.pagination.total} usuários
         </div>
       </div>
 

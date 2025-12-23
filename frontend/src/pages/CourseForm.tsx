@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import type { CourseCategory } from "../types";
+import { useToast } from "../context/ToastContext";
 
 type CourseFormData = {
   title: string;
@@ -19,6 +20,7 @@ export default function CourseFormPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isEdit = !!id;
+  const { showToast } = useToast();
 
   const [formData, setFormData] = useState<CourseFormData>({
     title: "",
@@ -94,10 +96,10 @@ export default function CourseFormPage() {
     try {
       if (isEdit && id) {
         await api.put(`/courses/${id}`, formData);
-        alert("Curso atualizado com sucesso!");
+        showToast("Curso atualizado com sucesso!", "success");
       } else {
         const { data } = await api.post("/courses", formData);
-        alert("Curso criado com sucesso!");
+        showToast("Curso criado com sucesso!", "success");
         navigate(`/instructor/courses/${data.id}/edit`);
       }
       navigate("/instructor/courses");
@@ -110,12 +112,17 @@ export default function CourseFormPage() {
 
   return (
     <div className="course-form-page">
-      <div className="page-header">
+      <header className="page-header">
+        <div>
+          <h1>{isEdit ? "Editar Curso" : "Criar Novo Curso"}</h1>
+          <p className="muted">
+            Defina as informações principais do curso. Depois você poderá organizar módulos, aulas e quizzes.
+          </p>
+        </div>
         <button onClick={() => navigate(-1)} className="btn-secondary">
           ← Voltar
         </button>
-        <h2>{isEdit ? "Editar Curso" : "Criar Novo Curso"}</h2>
-      </div>
+      </header>
 
       {error && <p className="error">{error}</p>}
 

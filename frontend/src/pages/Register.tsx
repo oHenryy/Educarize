@@ -36,54 +36,71 @@ export default function RegisterPage() {
 
   return (
     <div className="auth-card">
-      <h2>Criar conta</h2>
+      <h1>Criar conta</h1>
+      <p className="muted">
+        Cadastre-se como aluno ou instrutor para começar a usar a plataforma.
+      </p>
+
       <form onSubmit={handleSubmit} className="form">
-        <label>
-          Nome
+        <div className="form-group">
+          <label htmlFor="name">Nome</label>
           <input
+            id="name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
             placeholder="Seu nome"
           />
-        </label>
-        <label>
-          Email
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="email">Email</label>
           <input
+            id="email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
             placeholder="email@exemplo.com"
           />
-        </label>
-        <label>
-          Senha
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="password">Senha</label>
           <input
+            id="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             placeholder="********"
           />
-        </label>
-        <label>
-          Papel
-          <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="role">Papel</label>
+          <select
+            id="role"
+            value={role}
+            onChange={(e) => setRole(e.target.value as Role)}
+          >
             {roles.map((r) => (
               <option key={r} value={r}>
                 {r === "STUDENT" ? "Aluno" : "Instrutor"}
               </option>
             ))}
           </select>
-        </label>
+        </div>
+
         {error && <div className="error">{error}</div>}
+
         <button type="submit" disabled={loading}>
           {loading ? "Criando..." : "Criar conta"}
         </button>
       </form>
-      <p className="muted">
+
+      <p className="muted" style={{ marginTop: "12px" }}>
         Já tem conta? <Link to="/login">Entrar</Link>
       </p>
     </div>

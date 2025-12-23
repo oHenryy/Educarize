@@ -107,11 +107,29 @@ export default function AdminActivityLogsPage() {
 
   if (loading) return <div className="loading">Carregando logs...</div>;
   if (error) return <div className="error">{error}</div>;
-  if (!logs) return <div>Nenhum log encontrado</div>;
+  if (!logs) {
+    return (
+      <div className="admin-page">
+        <div className="empty-state">
+          <h3>Nenhum log encontrado</h3>
+          <p className="muted">
+            Assim que ações forem realizadas no sistema, elas aparecerão aqui para auditoria.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="admin-page">
-      <h1>Logs de Atividades</h1>
+      <header className="page-header">
+        <div>
+          <h1>Logs de Atividades</h1>
+          <p className="muted">
+            Acompanhe todas as ações relevantes realizadas na plataforma para fins de auditoria e segurança.
+          </p>
+        </div>
+      </header>
 
       <div className="filters-section" style={{ marginBottom: "20px" }}>
         <div className="filter-group">

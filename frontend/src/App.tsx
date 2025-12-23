@@ -1,12 +1,14 @@
 import { useMemo, type ReactElement, type ReactNode } from "react";
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import "./App.css";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ToastProvider } from "./context/ToastContext";
 import LoginPage from "./pages/Login";
 import RegisterPage from "./pages/Register";
 import CatalogPage from "./pages/Catalog";
 import CoursePage from "./pages/Course";
 import InstructorCoursesPage from "./pages/InstructorCourses";
+import InstructorDashboardPage from "./pages/InstructorDashboard";
 import CourseStudentsPage from "./pages/CourseStudents";
 import CourseFormPage from "./pages/CourseForm";
 import CourseContentPage from "./pages/CourseContent";
@@ -15,6 +17,16 @@ import AdminUsersPage from "./pages/AdminUsers";
 import AdminActivityLogsPage from "./pages/AdminActivityLogs";
 import AdminCategoriesPage from "./pages/AdminCategories";
 import ProfilePage from "./pages/Profile";
+import FavoritesPage from "./pages/Favorites";
+import NotificationsPage from "./pages/Notifications";
+import AdvancedSearchPage from "./pages/AdvancedSearch";
+import LearningPathsPage from "./pages/LearningPaths";
+import LearningPathDetailPage from "./pages/LearningPathDetail";
+import InstructorLearningPathsPage from "./pages/InstructorLearningPaths";
+import LearningPathFormPage from "./pages/LearningPathForm";
+import LearningPathCoursesPage from "./pages/LearningPathCourses";
+import MessagesPage from "./pages/Messages";
+import Notifications from "./components/Notifications";
 
 function ProtectedRoute({ children }: { children: ReactElement }) {
   const { token, loading } = useAuth();
@@ -61,6 +73,9 @@ function Layout({ children }: { children: ReactNode }) {
     [user]
   );
 
+  const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `nav-link${isActive ? " nav-link-active" : ""}`;
+
   return (
     <div className="layout">
       <header className="navbar">
@@ -68,33 +83,72 @@ function Layout({ children }: { children: ReactNode }) {
           <Link to="/catalog">Educarize</Link>
         </div>
         <nav className="nav-links">
-          {isLogged && <Link to="/catalog">Catálogo</Link>}
+          {isLogged && (
+            <>
+              <NavLink to="/catalog" className={navLinkClass}>
+                Catálogo
+              </NavLink>
+              <NavLink to="/learning-paths" className={navLinkClass}>
+                Trilhas
+              </NavLink>
+              <NavLink to="/search" className={navLinkClass}>
+                Busca
+              </NavLink>
+              <NavLink to="/favorites" className={navLinkClass}>
+                Favoritos
+              </NavLink>
+              <NavLink to="/messages" className={navLinkClass}>
+                Mensagens
+              </NavLink>
+            </>
+          )}
           {isLogged && (user?.role === "INSTRUCTOR" || user?.role === "ADMIN") && (
-            <Link to="/instructor/courses">Meus Cursos</Link>
+            <>
+              <NavLink to="/instructor/dashboard" className={navLinkClass}>
+                Dashboard Instrutor
+              </NavLink>
+              <NavLink to="/instructor/courses" className={navLinkClass}>
+                Meus Cursos
+              </NavLink>
+              <NavLink to="/instructor/learning-paths" className={navLinkClass}>
+                Minhas Trilhas
+              </NavLink>
+            </>
           )}
           {isLogged && user?.role === "ADMIN" && (
             <>
-              <Link to="/admin/dashboard">Dashboard</Link>
-              <Link to="/admin/users">Usuários</Link>
-              <Link to="/admin/categories">Categorias</Link>
-              <Link to="/admin/activity-logs">Logs</Link>
+              <NavLink to="/admin/dashboard" className={navLinkClass}>
+                Admin
+              </NavLink>
+              <NavLink to="/admin/users" className={navLinkClass}>
+                Usuários
+              </NavLink>
+              <NavLink to="/admin/categories" className={navLinkClass}>
+                Categorias
+              </NavLink>
+              <NavLink to="/admin/activity-logs" className={navLinkClass}>
+                Logs
+              </NavLink>
             </>
           )}
           {isLogged && (
-            <Link to="/profile">Perfil</Link>
+            <NavLink to="/profile" className={navLinkClass}>
+              Perfil
+            </NavLink>
           )}
         </nav>
         <div className="user-area">
           {isLogged ? (
             <div className="user-box">
+              <Notifications />
               <span className="avatar">{initials}</span>
               <div className="user-info">
                 <strong>{user?.name}</strong>
                 <small>{user?.role}</small>
-      </div>
+              </div>
               <button className="ghost" onClick={logout}>
                 Sair
-        </button>
+              </button>
             </div>
           ) : (
             <div className="auth-links">
@@ -114,8 +168,9 @@ function Layout({ children }: { children: ReactNode }) {
 function App() {
   return (
     <AuthProvider>
-      <Layout>
-        <Routes>
+      <ToastProvider>
+        <Layout>
+          <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route
@@ -131,6 +186,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <CoursePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/dashboard"
+            element={
+              <ProtectedRoute>
+                <InstructorDashboardPage />
               </ProtectedRoute>
             }
           />
@@ -214,9 +277,90 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="*" element={<Navigate to="/catalog" replace />} />
-        </Routes>
-      </Layout>
+          <Route
+            path="/favorites"
+            element={
+              <ProtectedRoute>
+                <FavoritesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute>
+                <NotificationsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/search"
+            element={
+              <ProtectedRoute>
+                <AdvancedSearchPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/learning-paths"
+            element={
+              <ProtectedRoute>
+                <LearningPathsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/learning-paths/:id"
+            element={
+              <ProtectedRoute>
+                <LearningPathDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/learning-paths"
+            element={
+              <ProtectedRoute>
+                <InstructorLearningPathsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/learning-paths/new"
+            element={
+              <ProtectedRoute>
+                <LearningPathFormPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/learning-paths/:id/edit"
+            element={
+              <ProtectedRoute>
+                <LearningPathFormPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/learning-paths/:id/courses"
+            element={
+              <ProtectedRoute>
+                <LearningPathCoursesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/messages"
+            element={
+              <ProtectedRoute>
+                <MessagesPage />
+              </ProtectedRoute>
+            }
+          />
+            <Route path="*" element={<Navigate to="/catalog" replace />} />
+          </Routes>
+        </Layout>
+      </ToastProvider>
     </AuthProvider>
   );
 }

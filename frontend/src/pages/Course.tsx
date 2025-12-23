@@ -5,6 +5,10 @@ import { useAuth } from "../context/AuthContext";
 import type { Course, Lesson, Module, CourseProgress, LessonComment } from "../types";
 import VideoPlayer from "../components/VideoPlayer";
 import QuizComponent from "../components/Quiz";
+import CourseReviews from "../components/CourseReviews";
+import CourseTags from "../components/CourseTags";
+import LessonAttachments from "../components/LessonAttachments";
+import { useToast } from "../context/ToastContext";
 
 type CourseResponse = Course & {
   modules: (Module & { lessons: Lesson[] })[];
@@ -14,6 +18,7 @@ export default function CoursePage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [course, setCourse] = useState<CourseResponse | null>(null);
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
@@ -31,6 +36,7 @@ export default function CoursePage() {
   const [currentModuleId, setCurrentModuleId] = useState<string | null>(null);
   const [certificate, setCertificate] = useState<{ id: string; pdfUrl: string } | null>(null);
   const [certificateLoading, setCertificateLoading] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -49,21 +55,22 @@ export default function CoursePage() {
       }
       
       try {
-        const [courseRes, enrollmentsRes] = await Promise.all([
+        const [courseRes, enrollmentsRes, favoriteCheck] = await Promise.all([
           api.get<CourseResponse>(`/courses/${id}`),
           user?.role === "STUDENT" ? api.get("/enrollments/my") : Promise.resolve({ data: [] }),
+          user ? api.get(`/favorites/${id}/check`).catch(() => ({ data: { isFavorite: false } })) : Promise.resolve({ data: { isFavorite: false } }),
         ]);
 
         setCourse(courseRes.data);
         const firstLesson = courseRes.data.modules?.[0]?.lessons?.[0] ?? null;
         setCurrentLesson(firstLesson || null);
+        setIsFavorite(favoriteCheck.data.isFavorite || false);
 
         let enrolled = false;
         if (user?.role === "STUDENT" && enrollmentsRes.data) {
           enrolled = enrollmentsRes.data.some((e: any) => e.courseId === id);
           setIsEnrolled(enrolled);
         } else if (user?.role === "INSTRUCTOR" || user?.role === "ADMIN") {
-          // Instrutores e admins podem ver seus próprios cursos
           enrolled = true;
           setIsEnrolled(true);
         }
@@ -80,6 +87,7 @@ export default function CoursePage() {
               const courseCert = certificatesRes.data.find((cert: any) => cert.courseId === id);
               if (courseCert) {
                 setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
+                showToast("🎉 Certificado gerado com sucesso!", "success");
               }
             }
               } catch (progressErr) {
@@ -127,7 +135,6 @@ export default function CoursePage() {
       return;
     }
 
-    // Encontrar o módulo da aula atual
     const module = course.modules?.find((mod) =>
       mod.lessons?.some((lesson) => lesson.id === currentLesson.id)
     );
@@ -173,13 +180,28 @@ export default function CoursePage() {
     fetchComments();
   }, [currentLesson?.id, isEnrolled]);
 
+  const handleToggleFavorite = async () => {
+    if (!id) return;
+    
+    try {
+      if (isFavorite) {
+        await api.delete(`/favorites/${id}`);
+        setIsFavorite(false);
+      } else {
+        await api.post("/favorites", { courseId: id });
+        setIsFavorite(true);
+      }
+    } catch (err: any) {
+      showToast(err.response?.data?.error || "Erro ao favoritar curso", "error");
+    }
+  };
+
   const handleEnroll = async () => {
     if (!id) return;
     try {
       await api.post("/enrollments", { courseId: id });
       setIsEnrolled(true);
-      alert("Matriculado com sucesso!");
-      // Recarregar progresso após matrícula
+      showToast("Matriculado com sucesso!", "success");
       try {
         const progressRes = await api.get<CourseProgress>(`/progress/course/${id}`);
         setProgress(progressRes.data);
@@ -187,7 +209,7 @@ export default function CoursePage() {
         console.warn("Erro ao carregar progresso:", progressErr);
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao se matricular");
+      showToast(err.response?.data?.error || "Erro ao se matricular", "error");
     }
   };
 
@@ -223,7 +245,6 @@ export default function CoursePage() {
           try {
             const certRes = await api.post("/certificates/generate", { courseId: id });
             if (certRes.data.pdfUrl) {
-              // Recarregar certificados
               const certsRes = await api.get("/certificates/my");
               const courseCert = certsRes.data.find((cert: any) => cert.courseId === id);
               if (courseCert) {
@@ -231,12 +252,14 @@ export default function CoursePage() {
               }
             }
           } catch (certErr: any) {
-            // Se o erro for que o curso não foi completado, não mostrar erro
-            // Outros erros podem ser mostrados
             if (certErr.response?.status !== 400 || !certErr.response?.data?.error?.includes("completado")) {
               console.warn("Erro ao gerar certificado:", certErr);
+              showToast(
+                certErr.response?.data?.error ||
+                  "Erro ao gerar certificado. Verifique se todas as aulas foram concluídas.",
+                "error"
+              );
             }
-            // Tentar recarregar certificados de qualquer forma (pode ter sido gerado pelo backend)
             try {
               const certsRes = await api.get("/certificates/my");
               const courseCert = certsRes.data.find((cert: any) => cert.courseId === id);
@@ -244,13 +267,12 @@ export default function CoursePage() {
                 setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
               }
             } catch (e) {
-              // Ignorar erro ao recarregar
             }
           }
         }
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao atualizar progresso");
+      showToast(err.response?.data?.error || "Erro ao atualizar progresso", "error");
     }
   };
 
@@ -271,9 +293,9 @@ export default function CoursePage() {
     try {
       await api.delete(`/certificates/${certificate.id}`);
       setCertificate(null);
-      alert("Certificado deletado com sucesso!");
+      showToast("Certificado deletado com sucesso!", "success");
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao deletar certificado");
+      showToast(err.response?.data?.error || "Erro ao deletar certificado", "error");
     }
   };
 
@@ -285,12 +307,12 @@ export default function CoursePage() {
       await api.post("/comments", {
         lessonId: currentLesson.id,
         content: newComment.trim(),
-          });
-          setNewComment("");
-          const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
+      });
+      setNewComment("");
+      const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
       setComments(res.data);
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao adicionar comentário");
+      showToast(err.response?.data?.error || "Erro ao adicionar comentário", "error");
     }
   };
 
@@ -302,13 +324,13 @@ export default function CoursePage() {
         lessonId: currentLesson.id,
         content: replyContent.trim(),
         parentId,
-          });
-          setReplyContent("");
-          setReplyingTo(null);
-          const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
+      });
+      setReplyContent("");
+      setReplyingTo(null);
+      const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
       setComments(res.data);
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao responder comentário");
+      showToast(err.response?.data?.error || "Erro ao responder comentário", "error");
     }
   };
 
@@ -322,7 +344,7 @@ export default function CoursePage() {
         setComments(res.data);
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao deletar comentário");
+      showToast(err.response?.data?.error || "Erro ao deletar comentário", "error");
     }
   };
 
@@ -338,15 +360,15 @@ export default function CoursePage() {
     try {
       await api.put(`/comments/${commentId}`, {
         content: editContent.trim(),
-          });
-          setEditingComment(null);
-          setEditContent("");
-          if (currentLesson?.id) {
+      });
+      setEditingComment(null);
+      setEditContent("");
+      if (currentLesson?.id) {
         const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
         setComments(res.data);
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao atualizar comentário");
+      showToast(err.response?.data?.error || "Erro ao atualizar comentário", "error");
     }
   };
 
@@ -375,13 +397,24 @@ export default function CoursePage() {
   };
 
   const isInstructor = user?.role === "INSTRUCTOR" || user?.role === "ADMIN";
-  const canViewStudents = isInstructor && (course?.instructor?.id === user?.id || user?.role === "ADMIN");
+  const canViewStudents =
+    isInstructor && (course?.instructor?.id === user?.id || user?.role === "ADMIN");
 
   if (loading) return <div className="loading">Carregando curso...</div>;
-  if (error) return <p className="error">{error}</p>;
-  if (!course) return <p>Curso não encontrado</p>;
+  if (error || !course) {
+    return (
+      <div className="course-enroll-prompt">
+        <div className="enroll-card">
+          <h2>Não foi possível carregar o curso</h2>
+          <p className="muted">{error || "Curso não encontrado ou indisponível."}</p>
+          <button className="btn-secondary" onClick={() => navigate("/catalog")}>
+            Voltar ao catálogo
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  // Se não está matriculado e não é instrutor/admin, mostrar botão de matrícula
   if (!isEnrolled && user?.role === "STUDENT") {
     return (
       <div className="course-enroll-prompt">
@@ -424,6 +457,12 @@ export default function CoursePage() {
                 <p>{currentLesson.description}</p>
               </div>
             )}
+            {!showQuiz && (
+              <LessonAttachments
+                lessonId={currentLesson.id}
+                canEdit={user?.role === "INSTRUCTOR" || user?.role === "ADMIN"}
+              />
+            )}
             {!showQuiz && isEnrolled && user?.role === "STUDENT" && (
               <div className="lesson-actions">
                 <button
@@ -439,9 +478,6 @@ export default function CoursePage() {
                 <QuizComponent
                   moduleId={currentModuleId}
                   onComplete={() => {
-                    // Não mostrar alert - a informação já está na tela do quiz
-                    // Não fechar o quiz - deixar o usuário ver os resultados
-                    // setShowQuiz(false); // Removido para manter o quiz visível
                   }}
                 />
               </div>
@@ -645,7 +681,17 @@ export default function CoursePage() {
         )}
       </div>
       <aside className="sidebar">
-        <h3>{course.title}</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <h3 style={{ margin: 0 }}>{course.title}</h3>
+          <button
+            onClick={handleToggleFavorite}
+            className={`btn-icon ${isFavorite ? "favorited" : ""}`}
+            title={isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+            style={{ fontSize: "1.5em", padding: "0.25rem 0.5rem" }}
+          >
+            {isFavorite ? "❤️" : "🤍"}
+          </button>
+        </div>
         <p className="muted">{course.description}</p>
         <div className="course-info-sidebar">
           <div className="info-item">
@@ -720,11 +766,15 @@ export default function CoursePage() {
                           const courseCert = certsRes.data.find((cert: any) => cert.courseId === id);
                           if (courseCert) {
                             setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
-                            alert("🎉 Certificado gerado com sucesso!");
+                            showToast("🎉 Certificado gerado com sucesso!", "success");
                           }
                         }
                       } catch (err: any) {
-                        alert(err.response?.data?.error || "Erro ao gerar certificado. Verifique se todas as aulas foram concluídas.");
+                        showToast(
+                          err.response?.data?.error ||
+                            "Erro ao gerar certificado. Verifique se todas as aulas foram concluídas.",
+                          "error"
+                        );
                       } finally {
                         setCertificateLoading(false);
                       }
@@ -762,7 +812,13 @@ export default function CoursePage() {
             </div>
           ))}
         </div>
+        {id && <CourseTags courseId={id} canEdit={user?.role === "INSTRUCTOR" || user?.role === "ADMIN"} />}
       </aside>
+      {id && (
+        <div className="reviews-section" style={{ marginTop: "2rem", padding: "1rem", maxWidth: "1200px", margin: "2rem auto" }}>
+          <CourseReviews courseId={id} />
+        </div>
+      )}
     </div>
   );
 }

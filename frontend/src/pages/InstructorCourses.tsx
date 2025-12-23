@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import type { Course } from "../types";
+import { PageHeader } from "../components/PageHeader";
+import { EmptyState } from "../components/EmptyState";
 
 export default function InstructorCoursesPage() {
   const { user } = useAuth();
@@ -37,25 +39,30 @@ export default function InstructorCoursesPage() {
     fetchCourses();
   }, [user, navigate]);
 
-  if (loading) return <div className="loading">Carregando...</div>;
+  if (loading) return <div className="loading">Carregando cursos...</div>;
   if (error) return <p className="error">{error}</p>;
 
   return (
     <div className="instructor-courses">
-      <div className="page-header">
-        <h2>Meus Cursos</h2>
-        <button onClick={() => navigate("/instructor/courses/new")} className="btn-primary">
-          Criar Novo Curso
-        </button>
-      </div>
+      <PageHeader
+        title="Meus Cursos"
+        subtitle="Gerencie os cursos que você ministra: edite conteúdo, acompanhe alunos e publique novos materiais."
+        actions={
+          <button onClick={() => navigate("/instructor/courses/new")} className="btn-primary">
+            + Novo Curso
+          </button>
+        }
+      />
 
       {courses.length === 0 ? (
-        <div className="empty-state">
-          <p>Você ainda não criou nenhum curso.</p>
+        <EmptyState
+          title="Nenhum curso encontrado"
+          description="Crie seu primeiro curso para começar a ensinar e acompanhar seus alunos."
+        >
           <button onClick={() => navigate("/instructor/courses/new")} className="btn-primary">
             Criar Primeiro Curso
           </button>
-        </div>
+        </EmptyState>
       ) : (
         <div className="course-grid">
           {courses.map((course) => (

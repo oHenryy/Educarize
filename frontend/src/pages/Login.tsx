@@ -35,34 +35,42 @@ export default function LoginPage() {
 
   return (
     <div className="auth-card">
-      <h2>Entrar</h2>
+      <h1>Bem-vindo ao Educarize</h1>
+      <p className="muted">Faça login para acessar seus cursos, trilhas e mensagens.</p>
+
       <form onSubmit={handleSubmit} className="form">
-        <label>
-          Email
+        <div className="form-group">
+          <label htmlFor="email">Email</label>
           <input
+            id="email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
             placeholder="email@exemplo.com"
           />
-        </label>
-        <label>
-          Senha
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="password">Senha</label>
           <input
+            id="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             placeholder="********"
           />
-        </label>
+        </div>
+
         {error && <div className="error">{error}</div>}
+
         <button type="submit" disabled={loading}>
           {loading ? "Entrando..." : "Entrar"}
         </button>
       </form>
-      <p className="muted">
+
+      <p className="muted" style={{ marginTop: "12px" }}>
         Ainda não tem conta? <Link to="/register">Criar conta</Link>
       </p>
     </div>

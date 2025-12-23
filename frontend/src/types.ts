@@ -29,6 +29,8 @@ export interface CourseCategory {
   id: string;
   name: string;
   description?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Course {
@@ -112,5 +114,144 @@ export interface Certificate {
       name: string;
     };
   };
+}
+
+export interface Favorite {
+  id: string;
+  userId: string;
+  courseId: string;
+  createdAt: string;
+  course: Course;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  createdAt: string;
+  _count?: {
+    courses: number;
+  };
+}
+
+export interface CourseTag {
+  id: string;
+  courseId: string;
+  tagId: string;
+  createdAt: string;
+  tag: Tag;
+}
+
+export interface Note {
+  id: string;
+  content: string;
+  userId: string;
+  lessonId: string;
+  createdAt: string;
+  updatedAt: string;
+  lesson?: {
+    id: string;
+    title: string;
+    module?: {
+      id: string;
+      title: string;
+      course?: {
+        id: string;
+        title: string;
+      };
+    };
+  };
+}
+
+export interface CourseReview {
+  id: string;
+  rating: number;
+  comment?: string | null;
+  userId: string;
+  courseId: string;
+  createdAt: string;
+  updatedAt: string;
+  user: Pick<User, "id" | "name" | "avatarUrl">;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
+  read: boolean;
+  userId: string;
+  createdAt: string;
+}
+
+export interface LessonAttachment {
+  id: string;
+  name: string;
+  description?: string | null;
+  fileUrl: string;
+  fileType: string;
+  fileSize?: number | null;
+  category?: string | null;
+  order: number;
+  thumbnailUrl?: string | null;
+  downloadCount: number;
+  lessonId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearningPath {
+  id: string;
+  title: string;
+  description?: string | null;
+  coverImageUrl?: string | null;
+  difficulty?: string | null;
+  estimatedHours?: number | null;
+  instructorId: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  instructor: Pick<User, "id" | "name" | "avatarUrl">;
+  courses?: LearningPathCourse[];
+  _count?: {
+    enrollments: number;
+  };
+}
+
+export interface LearningPathCourse {
+  id: string;
+  learningPathId: string;
+  courseId: string;
+  order: number;
+  isRequired: boolean;
+  createdAt: string;
+  course: Course;
+}
+
+export interface LearningPathEnrollment {
+  id: string;
+  userId: string;
+  learningPathId: string;
+  enrolledAt: string;
+  completedAt?: string | null;
+  progress: number;
+  learningPath?: LearningPath;
+}
+
+export interface Message {
+  id: string;
+  content: string;
+  senderId: string;
+  receiverId: string;
+  read: boolean;
+  createdAt: string;
+  sender: Pick<User, "id" | "name" | "avatarUrl">;
+  receiver: Pick<User, "id" | "name" | "avatarUrl">;
+}
+
+export interface Conversation {
+  userId: string;
+  user: Pick<User, "id" | "name" | "avatarUrl">;
+  lastMessage: Message;
+  unreadCount: number;
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import type { Module, Lesson, Quiz, QuizQuestion } from "../types";
 
 type ModuleWithLessons = Module & {
@@ -9,7 +10,6 @@ type ModuleWithLessons = Module & {
   quiz?: Quiz | null;
 };
 
-// Helper para garantir que options seja sempre um array
 const parseOptions = (options: any): string[] => {
   if (Array.isArray(options)) return options;
   if (typeof options === 'string') {
@@ -26,6 +26,7 @@ export default function CourseContentPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [modules, setModules] = useState<ModuleWithLessons[]>([]);
   const [courseTitle, setCourseTitle] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -106,7 +107,6 @@ export default function CourseContentPage() {
         courseId: id,
       });
       
-      // Se chegou aqui sem erro, foi sucesso
       setShowModuleForm(false);
       setEditingModule(null);
       
@@ -123,17 +123,14 @@ export default function CourseContentPage() {
         e.currentTarget.reset();
       }
     } catch (err: any) {
-      // Só mostrar erro se realmente houver um erro HTTP (status >= 400)
       if (err.response && err.response.status >= 400) {
-        alert(err.response?.data?.error || "Erro ao criar módulo");
+        showToast(err.response?.data?.error || "Erro ao criar módulo", "error");
       } else if (err.request) {
-        // Erro de rede (sem resposta do servidor)
         console.error("Erro de rede ao criar módulo:", err);
-        alert("Erro ao criar módulo. Verifique sua conexão.");
+        showToast("Erro ao criar módulo. Verifique sua conexão.", "error");
       } else {
-        // Outro tipo de erro
         console.error("Erro ao criar módulo:", err);
-        alert("Erro ao criar módulo. Tente novamente.");
+        showToast("Erro ao criar módulo. Tente novamente.", "error");
       }
     }
   };
@@ -156,7 +153,7 @@ export default function CourseContentPage() {
       
       setEditingModule(null);
       setShowModuleForm(false);
-      alert("Módulo atualizado com sucesso!");
+      showToast("Módulo atualizado com sucesso!", "success");
       
       try {
         const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
@@ -165,13 +162,13 @@ export default function CourseContentPage() {
         console.warn("Erro ao recarregar módulos:", reloadErr);
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao atualizar módulo");
+      showToast(err.response?.data?.error || "Erro ao atualizar módulo", "error");
     }
   };
 
   const handleEditModule = (module: ModuleWithLessons) => {
     setEditingModule(module);
-    setShowModuleForm(false); // Garantir que o formulário de criação não apareça
+    setShowModuleForm(false);
   };
 
   const handleCreateLesson = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -195,11 +192,10 @@ export default function CourseContentPage() {
         moduleId: selectedModuleId,
       });
       
-      // Se chegou aqui sem erro, foi sucesso
       setShowLessonForm(false);
       setSelectedModuleId("");
       setEditingLesson(null);
-      alert("Aula criada com sucesso!");
+      showToast("Aula criada com sucesso!", "success");
       
       try {
         const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
@@ -214,17 +210,14 @@ export default function CourseContentPage() {
         e.currentTarget.reset();
       }
     } catch (err: any) {
-      // Só mostrar erro se realmente houver um erro HTTP (status >= 400)
       if (err.response && err.response.status >= 400) {
-        alert(err.response?.data?.error || "Erro ao criar aula");
+        showToast(err.response?.data?.error || "Erro ao criar aula", "error");
       } else if (err.request) {
-        // Erro de rede (sem resposta do servidor)
         console.error("Erro de rede ao criar aula:", err);
-        alert("Erro ao criar aula. Verifique sua conexão.");
+        showToast("Erro ao criar aula. Verifique sua conexão.", "error");
       } else {
-        // Outro tipo de erro
         console.error("Erro ao criar aula:", err);
-        alert("Erro ao criar aula. Tente novamente.");
+        showToast("Erro ao criar aula. Tente novamente.", "error");
       }
     }
   };
@@ -252,7 +245,7 @@ export default function CourseContentPage() {
       setEditingLesson(null);
       setShowLessonForm(false);
       setSelectedModuleId("");
-      alert("Aula atualizada com sucesso!");
+      showToast("Aula atualizada com sucesso!", "success");
       
       try {
         const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
@@ -261,14 +254,14 @@ export default function CourseContentPage() {
         console.warn("Erro ao recarregar módulos:", reloadErr);
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao atualizar aula");
+      showToast(err.response?.data?.error || "Erro ao atualizar aula", "error");
     }
   };
 
   const handleEditLesson = (lesson: Lesson, moduleId: string) => {
     setEditingLesson(lesson);
     setSelectedModuleId(moduleId);
-    setShowLessonForm(false); // Garantir que o formulário de criação não apareça
+    setShowLessonForm(false);
   };
 
   const handleDeleteModule = async (moduleId: string) => {
@@ -279,7 +272,7 @@ export default function CourseContentPage() {
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao deletar módulo");
+      showToast(err.response?.data?.error || "Erro ao deletar módulo", "error");
     }
   };
 
@@ -291,7 +284,7 @@ export default function CourseContentPage() {
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao deletar aula");
+      showToast(err.response?.data?.error || "Erro ao deletar aula", "error");
     }
   };
 
@@ -320,11 +313,9 @@ export default function CourseContentPage() {
         })),
       };
       setEditingQuiz(quizData);
-      alert("Quiz criado com sucesso! Agora adicione questões.");
-      // Não fechar o formulário de quiz, apenas mostrar a seção de questões
-      // O formulário permanece aberto para permitir adicionar questões
+      showToast("Quiz criado com sucesso! Agora adicione questões.", "success");
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao criar quiz");
+      showToast(err.response?.data?.error || "Erro ao criar quiz", "error");
     }
   };
 
@@ -352,13 +343,12 @@ export default function CourseContentPage() {
         })),
       };
       setEditingQuiz(quizData);
-      alert("Quiz atualizado com sucesso!");
-      // Fechar o formulário após salvar
+      showToast("Quiz atualizado com sucesso!", "success");
       setShowQuizForm(false);
       setEditingQuiz(null);
       setSelectedQuizModuleId("");
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao atualizar quiz");
+      showToast(err.response?.data?.error || "Erro ao atualizar quiz", "error");
     }
   };
 
@@ -369,9 +359,9 @@ export default function CourseContentPage() {
       await api.delete(`/quizzes/${quizId}`);
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
-      alert("Quiz deletado com sucesso!");
+      showToast("Quiz deletado com sucesso!", "success");
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao deletar quiz");
+      showToast(err.response?.data?.error || "Erro ao deletar quiz", "error");
     }
   };
 
@@ -391,7 +381,7 @@ export default function CourseContentPage() {
     const options = [option1, option2, option3, option4].filter((opt) => opt.trim());
 
     if (options.length < 2) {
-      alert("É necessário pelo menos 2 opções");
+      showToast("É necessário pelo menos 2 opções", "error");
       return;
     }
 
@@ -403,7 +393,7 @@ export default function CourseContentPage() {
         correctAnswer,
         order,
       });
-      alert("Questão criada com sucesso!");
+      showToast("Questão criada com sucesso!", "success");
       if (editingQuiz) {
         const quizRes = await api.get<Quiz>(`/quizzes/module/${editingQuiz.moduleId}`);
         const quizData = {
@@ -417,7 +407,6 @@ export default function CourseContentPage() {
       }
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
-      // Fechar formulário após criar
       setShowQuestionForm(false);
       setSelectedQuizId("");
       setEditingQuestion(null);
@@ -425,7 +414,7 @@ export default function CourseContentPage() {
         questionFormRef.current.reset();
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao criar questão");
+      showToast(err.response?.data?.error || "Erro ao criar questão", "error");
     }
   };
 
@@ -445,7 +434,7 @@ export default function CourseContentPage() {
     const options = [option1, option2, option3, option4].filter((opt) => opt.trim());
 
     if (options.length < 2) {
-      alert("É necessário pelo menos 2 opções");
+      showToast("É necessário pelo menos 2 opções", "error");
       return;
     }
 
@@ -456,7 +445,7 @@ export default function CourseContentPage() {
         correctAnswer,
         order,
       });
-      alert("Questão atualizada com sucesso!");
+      showToast("Questão atualizada com sucesso!", "success");
       if (editingQuiz) {
         const quizRes = await api.get<Quiz>(`/quizzes/module/${editingQuiz.moduleId}`);
         const quizData = {
@@ -470,12 +459,11 @@ export default function CourseContentPage() {
       }
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
-      // Fechar formulário após salvar
       setShowQuestionForm(false);
       setEditingQuestion(null);
       setSelectedQuizId("");
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao atualizar questão");
+      showToast(err.response?.data?.error || "Erro ao atualizar questão", "error");
     }
   };
 
@@ -497,9 +485,9 @@ export default function CourseContentPage() {
       }
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
-      alert("Questão deletada com sucesso!");
+      showToast("Questão deletada com sucesso!", "success");
     } catch (err: any) {
-      alert(err.response?.data?.error || "Erro ao deletar questão");
+      showToast(err.response?.data?.error || "Erro ao deletar questão", "error");
     }
   };
 
@@ -518,22 +506,33 @@ export default function CourseContentPage() {
       setShowQuizForm(true);
       setShowQuestionForm(false);
       setEditingQuestion(null);
-    } catch (err: any) {
-      if (err.response?.status === 404) {
-        // Quiz não existe, criar novo
-        setEditingQuiz(null);
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          setEditingQuiz(null);
         setSelectedQuizModuleId(moduleId);
         setShowQuizForm(true);
         setShowQuestionForm(false);
         setEditingQuestion(null);
       } else {
-        alert(err.response?.data?.error || "Erro ao carregar quiz");
+        showToast(err.response?.data?.error || "Erro ao carregar quiz", "error");
       }
     }
   };
 
-  if (loading) return <div className="loading">Carregando...</div>;
-  if (error) return <p className="error">{error}</p>;
+  if (loading) return <div className="loading">Carregando conteúdo do curso...</div>;
+  if (error) {
+    return (
+      <div className="course-content-page">
+        <div className="enroll-card">
+          <h2>Não foi possível carregar o conteúdo</h2>
+          <p className="muted">{error}</p>
+          <button className="btn-secondary" onClick={() => navigate("/instructor/courses")}>
+            Voltar para Meus Cursos
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="course-content-page">
@@ -914,10 +913,8 @@ export default function CourseContentPage() {
             <div key={module.id} className="module-card">
               {editingModule?.id === module.id ? (
                 <div className="form-card inline-form">
-                  <h3>Editar Módulo</h3>
-                  <form 
-                    onSubmit={handleUpdateModule}
-                  >
+                    <h3>Editar Módulo</h3>
+                  <form onSubmit={handleUpdateModule}>
                     <div className="form-group">
                       <label>Título *</label>
                       <input 
@@ -1001,14 +998,17 @@ export default function CourseContentPage() {
                     {module.lessons?.length === 0 ? (
                       <p className="muted">Nenhuma aula ainda</p>
                     ) : (
-                      module.lessons?.map((lesson) => (
-                        <div key={lesson.id} className="lesson-item">
-                          {editingLesson?.id === lesson.id ? (
+                      module.lessons?.map((lesson) => {
+                        const isEditingThisLesson = editingLesson?.id === lesson.id;
+                        return (
+                          <div
+                            key={lesson.id}
+                            className={`lesson-item${isEditingThisLesson ? " editing" : ""}`}
+                          >
+                            {isEditingThisLesson ? (
                             <div className="form-card inline-form lesson-form">
                               <h4>Editar Aula</h4>
-                              <form 
-                                onSubmit={handleUpdateLesson}
-                              >
+                              <form onSubmit={handleUpdateLesson}>
                                 <div className="form-group">
                                   <label>Título *</label>
                                   <input 
@@ -1098,8 +1098,9 @@ export default function CourseContentPage() {
                               </div>
                             </>
                           )}
-                        </div>
-                      ))
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </>

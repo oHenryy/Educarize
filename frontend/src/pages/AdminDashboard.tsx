@@ -122,9 +122,15 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="admin-dashboard">
-      <h1>Dashboard Administrativo</h1>
+      <header className="page-header">
+        <div>
+          <h1>Dashboard Administrativo</h1>
+          <p className="muted">
+            Visão geral de usuários, cursos, matrículas, progresso, quizzes e atividade recente em toda a plataforma.
+          </p>
+        </div>
+      </header>
 
-      {/* Cards de Métricas Principais */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon">👥</div>
