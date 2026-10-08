@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { AuthUser, isOwnerOrAdmin } from "../utils/courseAccess";
 
 export class TagService {
   async createTag(name: string) {
@@ -44,13 +45,17 @@ export class TagService {
     return tags;
   }
 
-  async addTagToCourse(courseId: string, tagName: string) {
+  async addTagToCourse(courseId: string, tagName: string, user: AuthUser) {
     const course = await prisma.course.findUnique({
       where: { id: courseId },
     });
 
     if (!course) {
       throw new Error("Curso não encontrado");
+    }
+
+    if (!isOwnerOrAdmin(course.instructorId, user)) {
+      throw new Error("Sem permissão para editar as tags deste curso");
     }
 
     let tag = await prisma.tag.findUnique({
@@ -84,7 +89,20 @@ export class TagService {
     });
   }
 
-  async removeTagFromCourse(courseId: string, tagId: string) {
+  async removeTagFromCourse(courseId: string, tagId: string, user: AuthUser) {
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { instructorId: true },
+    });
+
+    if (!course) {
+      throw new Error("Curso não encontrado");
+    }
+
+    if (!isOwnerOrAdmin(course.instructorId, user)) {
+      throw new Error("Sem permissão para editar as tags deste curso");
+    }
+
     const courseTag = await prisma.courseTag.findUnique({
       where: {
         courseId_tagId: { courseId, tagId },

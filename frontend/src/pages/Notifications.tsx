@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { useCallback, useEffect, useState } from "react";
+import { api, getErrorMessage } from "../api/client";
 import type { Notification } from "../types";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -13,31 +13,31 @@ export default function NotificationsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const { showToast } = useToast();
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [page]);
-
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get(`/notifications?page=${page}&limit=50`);
       setNotifications(res.data.notifications || []);
       setUnreadCount(res.data.unreadCount || 0);
       setTotalPages(res.data.pagination?.totalPages || 1);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar notificações:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [page, fetchNotifications]);
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
       await api.put(`/notifications/${notificationId}/read`);
       setNotifications(notifications.map(n => n.id === notificationId ? { ...n, read: true } : n));
       setUnreadCount(Math.max(0, unreadCount - 1));
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao marcar como lida", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao marcar como lida"), "error");
     }
   };
 
@@ -46,8 +46,8 @@ export default function NotificationsPage() {
       await api.put("/notifications/read-all");
       setNotifications(notifications.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao marcar todas como lidas", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao marcar todas como lidas"), "error");
     }
   };
 
@@ -57,8 +57,8 @@ export default function NotificationsPage() {
     try {
       await api.delete(`/notifications/${notificationId}`);
       setNotifications(notifications.filter(n => n.id !== notificationId));
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar notificação", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar notificação"), "error");
     }
   };
 

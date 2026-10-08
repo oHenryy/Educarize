@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
-import type { Course, CourseCategory } from "../types";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
+import type { Course, CourseCategory, Favorite, MyEnrollment, QueryParams } from "../types";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 export default function CatalogPage() {
   const { user } = useAuth();
@@ -24,7 +24,7 @@ export default function CatalogPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const params: any = { status: "PUBLISHED" };
+        const params: QueryParams = { status: "PUBLISHED" };
         if (selectedCategory) params.categoryId = selectedCategory;
         if (selectedDifficulty) params.difficulty = selectedDifficulty;
         if (searchTerm) params.search = searchTerm;
@@ -32,24 +32,26 @@ export default function CatalogPage() {
         const [coursesRes, categoriesRes, enrollmentsRes, favoritesRes] = await Promise.all([
           api.get<Course[]>("/courses", { params }),
           api.get<CourseCategory[]>("/categories"),
-          user?.role === "STUDENT" ? api.get("/enrollments/my") : Promise.resolve({ data: [] }),
-          user ? api.get("/favorites").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          user ? api.get<MyEnrollment[]>("/enrollments/my") : Promise.resolve({ data: [] as MyEnrollment[] }),
+          user
+            ? api.get<Favorite[]>("/favorites").catch(() => ({ data: [] as Favorite[] }))
+            : Promise.resolve({ data: [] as Favorite[] }),
         ]);
 
         setCourses(coursesRes.data);
         setCategories(categoriesRes.data);
         
-        if (user?.role === "STUDENT" && enrollmentsRes.data) {
-          const enrolledIds = enrollmentsRes.data.map((e: any) => e.courseId);
+        if (enrollmentsRes.data) {
+          const enrolledIds = enrollmentsRes.data.map((e) => e.courseId);
           setMyEnrollments(enrolledIds);
         }
         
         if (favoritesRes.data && Array.isArray(favoritesRes.data)) {
-          const favoriteIds = favoritesRes.data.map((f: any) => f.courseId);
+          const favoriteIds = favoritesRes.data.map((f) => f.courseId);
           setFavorites(favoriteIds);
         }
-      } catch (err: any) {
-        setError(err.response?.data?.error || "Erro ao carregar dados");
+      } catch (err) {
+        setError(getErrorMessage(err, "Erro ao carregar dados"));
       } finally {
         setLoading(false);
       }
@@ -65,12 +67,13 @@ export default function CatalogPage() {
       await api.post("/enrollments", { courseId });
       setMyEnrollments([...myEnrollments, courseId]);
       showToast("Matriculado com sucesso!", "success");
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao se matricular", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao se matricular"), "error");
     }
   };
 
   const isEnrolled = (courseId: string) => myEnrollments.includes(courseId);
+  const isOwnCourse = (course: Course) => course.instructor?.id === user?.id;
   const isFavorite = (courseId: string) => favorites.includes(courseId);
 
   const handleToggleFavorite = async (courseId: string, e: React.MouseEvent) => {
@@ -85,8 +88,8 @@ export default function CatalogPage() {
         await api.post("/favorites", { courseId });
         setFavorites([...favorites, courseId]);
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao favoritar curso", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao favoritar curso"), "error");
     }
   };
 
@@ -176,7 +179,9 @@ export default function CatalogPage() {
               >
                 {isFavorite(course.id) ? "❤️" : "🤍"}
               </button>
-              {user?.role === "STUDENT" && (
+              {isOwnCourse(course) ? (
+                <span className="badge-enrolled">Seu curso</span>
+              ) : (
                 <>
                   {isEnrolled(course.id) ? (
                     <span className="badge-enrolled">Matriculado</span>

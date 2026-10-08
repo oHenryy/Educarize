@@ -8,7 +8,6 @@ export interface SearchFilters {
   tags?: string[];
   minRating?: number;
   instructorId?: string;
-  hasCertificate?: boolean;
 }
 
 export class SearchService {
@@ -73,15 +72,7 @@ export class SearchService {
     }
 
     if (courseIdsByRating !== null) {
-      if (courseIdsByRating.length > 0) {
-        if (where.id) {
-          where.id = { in: courseIdsByRating.filter(id => (where.id as any).in?.includes(id) || true) };
-        } else {
-          where.id = { in: courseIdsByRating };
-        }
-      } else {
-        where.id = { in: [] };
-      }
+      where.id = { in: courseIdsByRating };
     }
 
     const [courses, total] = await Promise.all([
@@ -115,26 +106,22 @@ export class SearchService {
       prisma.course.count({ where }),
     ]);
 
-    const coursesWithRatings = await Promise.all(
-      courses.map(async (course) => {
-        const reviews = await prisma.courseReview.findMany({
-          where: { courseId: course.id },
-        });
+    const ratingStats = await prisma.courseReview.groupBy({
+      by: ["courseId"],
+      where: { courseId: { in: courses.map((c) => c.id) } },
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+    const ratingsByCourse = new Map(ratingStats.map((r) => [r.courseId, r]));
 
-        const averageRating =
-          reviews.length > 0
-            ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
-            : 0;
-
-        const totalReviews = reviews.length;
-
-        return {
-          ...course,
-          averageRating: Math.round(averageRating * 10) / 10,
-          totalReviews,
-        };
-      })
-    );
+    const coursesWithRatings = courses.map((course) => {
+      const stats = ratingsByCourse.get(course.id);
+      return {
+        ...course,
+        averageRating: Math.round((stats?._avg.rating ?? 0) * 10) / 10,
+        totalReviews: stats?._count._all ?? 0,
+      };
+    });
 
     return {
       courses: coursesWithRatings,
@@ -153,19 +140,25 @@ export class SearchService {
         { title: { contains: query } },
         { description: { contains: query } },
       ],
+      module: {
+        course: { status: "PUBLISHED" },
+        ...(courseId && { courseId }),
+      },
     };
-
-    if (courseId) {
-      where.module = {
-        courseId,
-      };
-    }
 
     const lessons = await prisma.lesson.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        durationMinutes: true,
+        order: true,
+        moduleId: true,
         module: {
-          include: {
+          select: {
+            id: true,
+            title: true,
             course: {
               select: {
                 id: true,

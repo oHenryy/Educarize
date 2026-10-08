@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { LearningPath, LearningPathCourse, Course } from "../types";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 export default function LearningPathCoursesPage() {
   const { id } = useParams<{ id: string }>();
@@ -19,6 +19,30 @@ export default function LearningPathCoursesPage() {
   const [isRequired, setIsRequired] = useState(true);
   const { showToast } = useToast();
 
+  const fetchLearningPath = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await api.get<LearningPath>(`/learning-paths/${id}`);
+      setLearningPath(res.data);
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao carregar trilha"));
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  // Uma trilha pode combinar cursos publicados de qualquer instrutor.
+  const fetchAvailableCourses = useCallback(async () => {
+    try {
+      const res = await api.get<Course[]>("/courses", {
+        params: { status: "PUBLISHED" },
+      });
+      setAvailableCourses(res.data);
+    } catch (err) {
+      console.error("Erro ao carregar cursos:", err);
+    }
+  }, []);
+
   useEffect(() => {
     if (user?.role !== "INSTRUCTOR" && user?.role !== "ADMIN") {
       navigate("/catalog");
@@ -28,30 +52,7 @@ export default function LearningPathCoursesPage() {
       fetchLearningPath();
       fetchAvailableCourses();
     }
-  }, [id, user]);
-
-  const fetchLearningPath = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get<LearningPath>(`/learning-paths/${id}`);
-      setLearningPath(res.data);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao carregar trilha");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAvailableCourses = async () => {
-    try {
-      const res = await api.get<Course[]>("/courses", {
-        params: { status: "PUBLISHED", instructorId: user?.id },
-      });
-      setAvailableCourses(res.data);
-    } catch (err: any) {
-      console.error("Erro ao carregar cursos:", err);
-    }
-  };
+  }, [id, user, fetchLearningPath, fetchAvailableCourses, navigate]);
 
   const handleAddCourse = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,8 +72,8 @@ export default function LearningPathCoursesPage() {
       setCourseOrder("");
       setIsRequired(true);
       fetchLearningPath();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao adicionar curso", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao adicionar curso"), "error");
     }
   };
 
@@ -80,15 +81,10 @@ export default function LearningPathCoursesPage() {
     if (!confirm("Tem certeza que deseja remover este curso da trilha?")) return;
 
     try {
-      await api.delete(`/learning-paths/${id}/courses`, {
-        data: { courseId },
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      await api.delete(`/learning-paths/${id}/courses/${courseId}`);
       fetchLearningPath();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao remover curso", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao remover curso"), "error");
     }
   };
 
@@ -103,33 +99,15 @@ export default function LearningPathCoursesPage() {
       const newIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
       if (newIndex < 0 || newIndex >= learningPath.courses.length) return;
 
-      const targetCourse = learningPath.courses[newIndex];
-      
-      await api.delete(`/learning-paths/${id}/courses`, {
-        data: { courseId: pathCourse.courseId },
-        headers: { 'Content-Type': 'application/json' },
-      });
+      // Reordenação atômica no backend (uma única requisição/transação).
+      const courseIds = learningPath.courses.map((pc) => pc.courseId);
+      [courseIds[currentIndex], courseIds[newIndex]] = [courseIds[newIndex], courseIds[currentIndex]];
 
-      await api.post(`/learning-paths/${id}/courses`, {
-        courseId: pathCourse.courseId,
-        order: targetCourse.order,
-        isRequired: pathCourse.isRequired,
-      });
-
-      await api.delete(`/learning-paths/${id}/courses`, {
-        data: { courseId: targetCourse.courseId },
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      await api.post(`/learning-paths/${id}/courses`, {
-        courseId: targetCourse.courseId,
-        order: pathCourse.order,
-        isRequired: targetCourse.isRequired,
-      });
+      await api.put(`/learning-paths/${id}/courses/reorder`, { courseIds });
 
       fetchLearningPath();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao reordenar curso", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao reordenar curso"), "error");
     }
   };
 
@@ -143,6 +121,8 @@ export default function LearningPathCoursesPage() {
 
   const enrolledCourseIds = learningPath.courses?.map((pc) => pc.courseId) || [];
   const coursesToAdd = availableCourses.filter((c) => !enrolledCourseIds.includes(c.id));
+  const ownCourses = coursesToAdd.filter((c) => c.instructor?.id === learningPath.instructorId);
+  const otherCourses = coursesToAdd.filter((c) => c.instructor?.id !== learningPath.instructorId);
 
   return (
     <div className="learning-path-courses-page">
@@ -177,13 +157,29 @@ export default function LearningPathCoursesPage() {
                   onChange={(e) => setSelectedCourseId(e.target.value)}
                   required
                 >
-                  <option value="">Selecione um curso...</option>
-                  {coursesToAdd.map((course) => (
-                    <option key={course.id} value={course.id}>
-                      {course.title}
-                    </option>
-                  ))}
+                  <option value="">
+                    {coursesToAdd.length === 0 ? "Nenhum curso publicado disponível" : "Selecione um curso..."}
+                  </option>
+                  {ownCourses.length > 0 && (
+                    <optgroup label="Cursos do autor da trilha">
+                      {ownCourses.map((course) => (
+                        <option key={course.id} value={course.id}>
+                          {course.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {otherCourses.length > 0 && (
+                    <optgroup label="Cursos de outros instrutores">
+                      {otherCourses.map((course) => (
+                        <option key={course.id} value={course.id}>
+                          {course.title} — {course.instructor?.name ?? "Instrutor"}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
+                <small className="muted">Apenas cursos publicados podem ser adicionados.</small>
               </div>
 
               <div className="form-group">

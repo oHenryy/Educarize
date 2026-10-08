@@ -1,14 +1,29 @@
 import { prisma } from "../config/database";
 import { NotificationService } from "./notificationService";
+import { HttpError } from "../utils/httpError";
+import {
+  AuthUser,
+  assertCourseContentAccess,
+  getCourseIdByQuiz,
+  isOwnerOrAdmin,
+} from "../utils/courseAccess";
+
+function validatePassingScore(passingScore: unknown): void {
+  if (passingScore === undefined || passingScore === null) return;
+  if (typeof passingScore !== "number" || !Number.isInteger(passingScore) || passingScore < 0 || passingScore > 100) {
+    throw new HttpError(400, "Nota mínima deve ser um número inteiro entre 0 e 100");
+  }
+}
 
 export class QuizService {
-  async getByModule(moduleId: string) {
+  async getByModule(moduleId: string, user: AuthUser) {
     const quiz = await prisma.quiz.findUnique({
       where: { moduleId },
       include: {
         questions: {
           orderBy: { order: "asc" },
         },
+        module: { select: { courseId: true, course: { select: { instructorId: true } } } },
       },
     });
 
@@ -16,15 +31,20 @@ export class QuizService {
       throw new Error("Quiz não encontrado");
     }
 
-    const quizWithParsedOptions = {
-      ...quiz,
-      questions: quiz.questions.map((q) => ({
+    await assertCourseContentAccess(quiz.module.courseId, user);
+
+    // O gabarito só é enviado para o dono do curso ou administradores.
+    const canSeeAnswers = isOwnerOrAdmin(quiz.module.course.instructorId, user);
+    const { module: _module, ...quizData } = quiz;
+
+    return {
+      ...quizData,
+      questions: quiz.questions.map(({ correctAnswer, ...q }) => ({
         ...q,
         options: JSON.parse(q.options),
+        ...(canSeeAnswers && { correctAnswer }),
       })),
     };
-
-    return quizWithParsedOptions;
   }
 
   async create(
@@ -60,11 +80,13 @@ export class QuizService {
       throw new Error("Já existe um quiz para este módulo");
     }
 
+    validatePassingScore(data.passingScore);
+
     const quiz = await prisma.quiz.create({
       data: {
         title: data.title,
         description: data.description,
-        passingScore: data.passingScore || 70,
+        passingScore: data.passingScore ?? 70,
         moduleId,
       },
       include: {
@@ -111,6 +133,8 @@ export class QuizService {
     if (quiz.module.course.instructorId !== userId && userRole !== "ADMIN") {
       throw new Error("Sem permissão para editar este quiz");
     }
+
+    validatePassingScore(data.passingScore);
 
     const updated = await prisma.quiz.update({
       where: { id: quizId },
@@ -200,7 +224,11 @@ export class QuizService {
       throw new Error("Sem permissão para adicionar questões neste quiz");
     }
 
-    if (data.correctAnswer < 0 || data.correctAnswer >= data.options.length) {
+    if (
+      !Number.isInteger(data.correctAnswer) ||
+      data.correctAnswer < 0 ||
+      data.correctAnswer >= data.options.length
+    ) {
       throw new Error("Resposta correta inválida");
     }
 
@@ -209,7 +237,7 @@ export class QuizService {
         question: data.question,
         options: JSON.stringify(data.options),
         correctAnswer: data.correctAnswer,
-        order: data.order || 0,
+        order: data.order ?? 0,
         quizId,
       },
     });
@@ -258,8 +286,14 @@ export class QuizService {
       throw new Error("Sem permissão para editar esta questão");
     }
 
-    if (data.options && data.correctAnswer !== undefined) {
-      if (data.correctAnswer < 0 || data.correctAnswer >= data.options.length) {
+    // Valida a combinação final (opções novas ou existentes x resposta nova ou existente).
+    if (data.options !== undefined || data.correctAnswer !== undefined) {
+      const finalOptions: string[] = data.options ?? JSON.parse(question.options);
+      const finalAnswer = data.correctAnswer ?? question.correctAnswer;
+      if (finalOptions.length < 2) {
+        throw new Error("Resposta correta inválida");
+      }
+      if (!Number.isInteger(finalAnswer) || finalAnswer < 0 || finalAnswer >= finalOptions.length) {
         throw new Error("Resposta correta inválida");
       }
     }
@@ -318,8 +352,15 @@ export class QuizService {
   async submitAttempt(
     quizId: string,
     userId: string,
-    answers: { [questionId: string]: number }
+    answers: { [questionId: string]: number },
+    user: AuthUser
   ) {
+    await assertCourseContentAccess(await getCourseIdByQuiz(quizId), user);
+
+    if (typeof answers !== "object" || answers === null || Array.isArray(answers)) {
+      throw new HttpError(400, "answers deve ser um objeto { questionId: índice }");
+    }
+
     const quiz = await prisma.quiz.findUnique({
       where: { id: quizId },
       include: {
@@ -361,7 +402,10 @@ export class QuizService {
       },
       include: {
         quiz: {
-          include: {
+          select: {
+            id: true,
+            title: true,
+            passingScore: true,
             module: {
               include: {
                 course: {

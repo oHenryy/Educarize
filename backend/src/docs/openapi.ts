@@ -87,8 +87,8 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
                   },
                   role: {
                     type: "string",
-                    enum: ["ADMIN", "INSTRUCTOR", "STUDENT"],
-                    description: "Papel do usuário (opcional, padrão: STUDENT)",
+                    enum: ["INSTRUCTOR", "STUDENT"],
+                    description: "Papel do usuário (opcional, padrão: STUDENT). ADMIN só pode ser atribuído por outro administrador.",
                     example: "STUDENT"
                   }
                 },
@@ -567,46 +567,6 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
         }
       }
     },
-    "/lessons/{id}/attachments": {
-      post: {
-        tags: ["Aulas"],
-        summary: "Adicionar anexo a uma aula",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  fileUrl: { type: "string" },
-                  fileType: { type: "string", enum: ["PDF", "ZIP", "OTHER"] },
-                  fileSize: { type: "integer" }
-                },
-                required: ["name", "fileUrl", "fileType"]
-              }
-            }
-          }
-        },
-        responses: {
-          "201": { description: "Anexo adicionado" }
-        }
-      }
-    },
-    "/lessons/attachments/{attachmentId}": {
-      delete: {
-        tags: ["Aulas"],
-        summary: "Deletar anexo de uma aula",
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: "attachmentId", in: "path", required: true, schema: { type: "string" } }],
-        responses: {
-          "200": { description: "Anexo deletado" },
-          "403": { description: "Sem permissão" }
-        }
-      }
-    },
     "/progress/complete": {
       post: {
         tags: ["Progresso"],
@@ -968,6 +928,48 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
         responses: {
           "200": { description: "Lista de usuários" },
           "403": { description: "Apenas ADMIN" }
+        }
+      }
+    },
+    "/admin/users/{id}/transfer-content": {
+      post: {
+        tags: ["Administração"],
+        summary: "Transferir cursos e trilhas de um usuário para outro instrutor (ADMIN)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" }, description: "Usuário de origem" }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["targetUserId"],
+                properties: {
+                  targetUserId: { type: "string", description: "Instrutor ou administrador que receberá o conteúdo" }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          "200": {
+            description: "Conteúdo transferido",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    coursesTransferred: { type: "integer" },
+                    learningPathsTransferred: { type: "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { description: "Destinatário inválido" },
+          "404": { description: "Usuário não encontrado" }
         }
       }
     },
@@ -2206,16 +2208,48 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
           "403": { description: "Sem permissão" }
         }
       },
+    },
+    "/learning-paths/{id}/courses/{courseId}": {
       delete: {
         tags: ["Trilhas de Aprendizado"],
         summary: "Remover curso de uma trilha (INSTRUCTOR/ADMIN)",
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" } },
-          { name: "courseId", in: "query", required: true, schema: { type: "string" } }
+          { name: "courseId", in: "path", required: true, schema: { type: "string" } }
         ],
         responses: {
-          "200": { description: "Curso removido da trilha" },
+          "204": { description: "Curso removido da trilha" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
+    "/learning-paths/{id}/courses/reorder": {
+      put: {
+        tags: ["Trilhas de Aprendizado"],
+        summary: "Reordenar cursos de uma trilha (INSTRUCTOR/ADMIN)",
+        description: "Recebe a lista completa de IDs de curso da trilha na nova ordem e aplica tudo em uma transação.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["courseIds"],
+                properties: {
+                  courseIds: { type: "array", items: { type: "string" } }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Trilha com os cursos na nova ordem" },
+          "400": { description: "Lista não corresponde aos cursos da trilha" },
           "403": { description: "Sem permissão" }
         }
       }

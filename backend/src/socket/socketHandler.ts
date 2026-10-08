@@ -1,6 +1,7 @@
 import { Server as SocketServer, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
 import { config } from "../config/env";
+import { prisma } from "../config/database";
 import { MessageService } from "../services/messageService";
 
 interface AuthenticatedSocket extends Socket {
@@ -20,8 +21,15 @@ export function setupSocketIO(io: SocketServer) {
       }
 
       const decoded = jwt.verify(token, config.jwtSecret) as { userId: string; role: string };
-      socket.userId = decoded.userId;
-      socket.userRole = decoded.role;
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, role: true },
+      });
+      if (!user) {
+        return next(new Error("Usuário não encontrado"));
+      }
+      socket.userId = user.id;
+      socket.userRole = user.role;
       next();
     } catch (error) {
       next(new Error("Token inválido"));
@@ -41,7 +49,7 @@ export function setupSocketIO(io: SocketServer) {
       try {
         const { receiverId, content } = data;
 
-        if (!receiverId || !content) {
+        if (!receiverId || typeof content !== "string" || !content.trim()) {
           socket.emit("error", { message: "receiverId e content são obrigatórios" });
           return;
         }

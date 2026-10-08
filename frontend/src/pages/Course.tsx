@@ -1,18 +1,22 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
-import type { Course, Lesson, Module, CourseProgress, LessonComment } from "../types";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
+import type { Course, Lesson, Module, CourseProgress, LessonComment, MyEnrollment } from "../types";
 import VideoPlayer from "../components/VideoPlayer";
 import QuizComponent from "../components/Quiz";
 import CourseReviews from "../components/CourseReviews";
 import CourseTags from "../components/CourseTags";
 import LessonAttachments from "../components/LessonAttachments";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
-type CourseResponse = Course & {
-  modules: (Module & { lessons: Lesson[] })[];
+type CourseModule = Module & { lessons: Lesson[]; quiz?: { id: string } | null };
+
+type CourseResponse = Omit<Course, "modules"> & {
+  modules: CourseModule[];
 };
+
+type CertificateSummary = { id: string; courseId: string; pdfUrl: string };
 
 export default function CoursePage() {
   const { id } = useParams<{ id: string }>();
@@ -39,6 +43,16 @@ export default function CoursePage() {
   const [isFavorite, setIsFavorite] = useState(false);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
+  const isOwner =
+    !!user && !!course && (user.role === "ADMIN" || course.instructor?.id === user.id);
+  // Aluno matriculado (inclui instrutores matriculados em cursos de outros instrutores).
+  const isLearner = isEnrolled && !isOwner;
+
+  const findCourseCertificate = useCallback(async (): Promise<CertificateSummary | null> => {
+    const res = await api.get<CertificateSummary[]>("/certificates/my");
+    return res.data.find((cert) => cert.courseId === id) ?? null;
+  }, [id]);
+
   useEffect(() => {
     setCourse(null);
     setCurrentLesson(null);
@@ -57,7 +71,7 @@ export default function CoursePage() {
       try {
         const [courseRes, enrollmentsRes, favoriteCheck] = await Promise.all([
           api.get<CourseResponse>(`/courses/${id}`),
-          user?.role === "STUDENT" ? api.get("/enrollments/my") : Promise.resolve({ data: [] }),
+          user ? api.get<MyEnrollment[]>("/enrollments/my") : Promise.resolve({ data: [] as MyEnrollment[] }),
           user ? api.get(`/favorites/${id}/check`).catch(() => ({ data: { isFavorite: false } })) : Promise.resolve({ data: { isFavorite: false } }),
         ]);
 
@@ -66,68 +80,42 @@ export default function CoursePage() {
         setCurrentLesson(firstLesson || null);
         setIsFavorite(favoriteCheck.data.isFavorite || false);
 
-        let enrolled = false;
-        if (user?.role === "STUDENT" && enrollmentsRes.data) {
-          enrolled = enrollmentsRes.data.some((e: any) => e.courseId === id);
-          setIsEnrolled(enrolled);
-        } else if (user?.role === "INSTRUCTOR" || user?.role === "ADMIN") {
-          enrolled = true;
-          setIsEnrolled(true);
-        }
+        const owner =
+          user?.role === "ADMIN" || courseRes.data.instructor?.id === user?.id;
+        const enrolledAsStudent = Array.isArray(enrollmentsRes.data)
+          ? enrollmentsRes.data.some((e) => e.courseId === id)
+          : false;
+        setIsEnrolled(owner || enrolledAsStudent);
 
-        if (enrolled || user?.role === "INSTRUCTOR" || user?.role === "ADMIN") {
+        if (enrolledAsStudent && !owner) {
           try {
-            const [progressRes, certificatesRes] = await Promise.all([
+            const [progressRes, courseCert] = await Promise.all([
               api.get<CourseProgress>(`/progress/course/${id}`),
-              user?.role === "STUDENT" ? api.get("/certificates/my").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+              findCourseCertificate().catch(() => null),
             ]);
             setProgress(progressRes.data);
-            
-            if (certificatesRes.data && Array.isArray(certificatesRes.data)) {
-              const courseCert = certificatesRes.data.find((cert: any) => cert.courseId === id);
-              if (courseCert) {
-                setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
-                showToast("🎉 Certificado gerado com sucesso!", "success");
-              }
+            if (courseCert) {
+              setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
             }
-              } catch (progressErr) {
-                console.warn("Erro ao carregar progresso:", progressErr);
+          } catch (progressErr) {
+            console.warn("Erro ao carregar progresso:", progressErr);
           }
         }
-      } catch (err: any) {
-        setError(err.response?.data?.error || "Erro ao carregar curso");
+      } catch (err) {
+        setError(getErrorMessage(err, "Erro ao carregar curso"));
       } finally {
         setLoading(false);
       }
     }
     fetchCourse();
-  }, [id, user]);
+  }, [id, user, findCourseCertificate]);
+
+  const currentLessonId = currentLesson?.id;
 
   useEffect(() => {
-    if (!currentLesson || !currentLesson.id || !isEnrolled) {
-      setCurrentLessonProgress(false);
-      return;
-    }
-
-    const lessonId = currentLesson.id;
-    async function fetchLessonProgress() {
-      try {
-        const res = await api.get(`/progress/lesson/${lessonId}`);
-        setCurrentLessonProgress(res.data.completed || false);
-      } catch (err) {
-        setCurrentLessonProgress(false);
-      }
-    }
-
-    fetchLessonProgress();
-  }, [currentLesson?.id, isEnrolled]);
-
-  useEffect(() => {
-    if (progress && currentLesson?.id) {
-      const lessonProgress = progress.lessons.find((l) => l.lessonId === currentLesson.id);
-      setCurrentLessonProgress(lessonProgress?.completed || false);
-    }
-  }, [currentLesson?.id, progress]);
+    const lessonProgress = progress?.lessons.find((l) => l.lessonId === currentLessonId);
+    setCurrentLessonProgress(lessonProgress?.completed || false);
+  }, [currentLessonId, progress]);
 
   useEffect(() => {
     if (!currentLesson || !course || !progress || !isEnrolled) {
@@ -139,7 +127,8 @@ export default function CoursePage() {
       mod.lessons?.some((lesson) => lesson.id === currentLesson.id)
     );
 
-    if (!module) {
+    // Só exibe o quiz quando o módulo realmente tem um.
+    if (!module || !module.quiz) {
       setShowQuiz(false);
       return;
     }
@@ -161,12 +150,12 @@ export default function CoursePage() {
   }, [currentLesson, course, progress, isEnrolled]);
 
   useEffect(() => {
-    if (!currentLesson || !currentLesson.id || !isEnrolled) {
+    if (!currentLessonId || !isEnrolled) {
       setComments([]);
       return;
     }
 
-    const lessonId = currentLesson.id;
+    const lessonId = currentLessonId;
     async function fetchComments() {
       try {
         const res = await api.get<LessonComment[]>(`/comments/lesson/${lessonId}`);
@@ -178,7 +167,7 @@ export default function CoursePage() {
     }
 
     fetchComments();
-  }, [currentLesson?.id, isEnrolled]);
+  }, [currentLessonId, isEnrolled]);
 
   const handleToggleFavorite = async () => {
     if (!id) return;
@@ -191,8 +180,8 @@ export default function CoursePage() {
         await api.post("/favorites", { courseId: id });
         setIsFavorite(true);
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao favoritar curso", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao favoritar curso"), "error");
     }
   };
 
@@ -200,16 +189,22 @@ export default function CoursePage() {
     if (!id) return;
     try {
       await api.post("/enrollments", { courseId: id });
-      setIsEnrolled(true);
       showToast("Matriculado com sucesso!", "success");
       try {
-        const progressRes = await api.get<CourseProgress>(`/progress/course/${id}`);
+        // Recarrega o curso: antes da matrícula a API não envia os links dos vídeos.
+        const [courseRes, progressRes] = await Promise.all([
+          api.get<CourseResponse>(`/courses/${id}`),
+          api.get<CourseProgress>(`/progress/course/${id}`),
+        ]);
+        setCourse(courseRes.data);
+        setCurrentLesson(courseRes.data.modules?.[0]?.lessons?.[0] ?? null);
         setProgress(progressRes.data);
       } catch (progressErr) {
         console.warn("Erro ao carregar progresso:", progressErr);
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao se matricular", "error");
+      setIsEnrolled(true);
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao se matricular"), "error");
     }
   };
 
@@ -225,61 +220,54 @@ export default function CoursePage() {
           setCurrentLessonProgress(true);
         }
 
-        if (id) {
-        const [progressRes, certificatesRes] = await Promise.all([
+      if (id) {
+        const [progressRes, existingCert] = await Promise.all([
           api.get<CourseProgress>(`/progress/course/${id}`),
-          api.get("/certificates/my").catch(() => ({ data: [] })),
-            ]);
-            setProgress(progressRes.data);
-            
-            if (certificatesRes.data && Array.isArray(certificatesRes.data)) {
-          const courseCert = certificatesRes.data.find((cert: any) => cert.courseId === id);
-          if (courseCert) {
-            setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
-          } else {
-                    setCertificate(null);
-                  }
-                }
-                
-                if (progressRes.data.progressPercentage === 100 && !certificate) {
+          findCourseCertificate().catch(() => null),
+        ]);
+        setProgress(progressRes.data);
+
+        // O backend gera o certificado automaticamente ao concluir a última aula;
+        // só pede a geração manual se, por algum motivo, ele ainda não existir.
+        let courseCert = existingCert;
+        if (!courseCert && progressRes.data.progressPercentage === 100) {
           try {
-            const certRes = await api.post("/certificates/generate", { courseId: id });
-            if (certRes.data.pdfUrl) {
-              const certsRes = await api.get("/certificates/my");
-              const courseCert = certsRes.data.find((cert: any) => cert.courseId === id);
-              if (courseCert) {
-                setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
-              }
-            }
-          } catch (certErr: any) {
-            if (certErr.response?.status !== 400 || !certErr.response?.data?.error?.includes("completado")) {
-              console.warn("Erro ao gerar certificado:", certErr);
-              showToast(
-                certErr.response?.data?.error ||
-                  "Erro ao gerar certificado. Verifique se todas as aulas foram concluídas.",
-                "error"
-              );
-            }
-            try {
-              const certsRes = await api.get("/certificates/my");
-              const courseCert = certsRes.data.find((cert: any) => cert.courseId === id);
-              if (courseCert) {
-                setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
-              }
-            } catch (e) {
-            }
+            const certRes = await api.post<{ id: string; pdfUrl: string }>("/certificates/generate", { courseId: id });
+            courseCert = { id: certRes.data.id, courseId: id, pdfUrl: certRes.data.pdfUrl };
+          } catch (certErr) {
+            console.warn("Erro ao gerar certificado:", certErr);
+            showToast(
+              getErrorMessage(certErr, "Erro ao gerar certificado. Verifique se todas as aulas foram concluídas."),
+              "error"
+            );
           }
         }
+
+        if (courseCert && !certificate) {
+          showToast("🎉 Certificado gerado com sucesso!", "success");
+        }
+        setCertificate(courseCert ? { id: courseCert.id, pdfUrl: courseCert.pdfUrl } : null);
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao atualizar progresso", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao atualizar progresso"), "error");
     }
   };
 
-  const handleDownloadCertificate = () => {
-    if (certificate) {
-      const API_URL = api.defaults.baseURL || "http://localhost:4000";
-      window.open(`${API_URL}${certificate.pdfUrl}`, "_blank");
+  const handleDownloadCertificate = async () => {
+    if (!certificate) return;
+    try {
+      // O download exige autenticação, então é feito via API (com token) e aberto como blob.
+      const res = await api.get(`/certificates/${certificate.id}/download`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `certificado_${course?.title.replace(/\s+/g, "_") || "curso"}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      showToast("Erro ao baixar certificado", "error");
     }
   };
 
@@ -294,8 +282,8 @@ export default function CoursePage() {
       await api.delete(`/certificates/${certificate.id}`);
       setCertificate(null);
       showToast("Certificado deletado com sucesso!", "success");
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar certificado", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar certificado"), "error");
     }
   };
 
@@ -311,8 +299,8 @@ export default function CoursePage() {
       setNewComment("");
       const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
       setComments(res.data);
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao adicionar comentário", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao adicionar comentário"), "error");
     }
   };
 
@@ -329,13 +317,17 @@ export default function CoursePage() {
       setReplyingTo(null);
       const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
       setComments(res.data);
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao responder comentário", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao responder comentário"), "error");
     }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
-    if (!confirm("Tem certeza que deseja deletar este comentário?")) return;
+  const handleDeleteComment = async (commentId: string, replyCount = 0) => {
+    const message =
+      replyCount > 0
+        ? `Tem certeza que deseja deletar este comentário? As ${replyCount} resposta(s) dele também serão removidas.`
+        : "Tem certeza que deseja deletar este comentário?";
+    if (!confirm(message)) return;
 
         try {
           await api.delete(`/comments/${commentId}`);
@@ -343,8 +335,8 @@ export default function CoursePage() {
         const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
         setComments(res.data);
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar comentário", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar comentário"), "error");
     }
   };
 
@@ -367,8 +359,8 @@ export default function CoursePage() {
         const res = await api.get<LessonComment[]>(`/comments/lesson/${currentLesson.id}`);
         setComments(res.data);
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao atualizar comentário", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao atualizar comentário"), "error");
     }
   };
 
@@ -396,9 +388,8 @@ export default function CoursePage() {
     return date.toLocaleDateString("pt-BR");
   };
 
-  const isInstructor = user?.role === "INSTRUCTOR" || user?.role === "ADMIN";
-  const canViewStudents =
-    isInstructor && (course?.instructor?.id === user?.id || user?.role === "ADMIN");
+  const canViewStudents = isOwner;
+  const canModerateComments = user?.role === "ADMIN";
 
   if (loading) return <div className="loading">Carregando curso...</div>;
   if (error || !course) {
@@ -415,7 +406,7 @@ export default function CoursePage() {
     );
   }
 
-  if (!isEnrolled && user?.role === "STUDENT") {
+  if (!isEnrolled) {
     return (
       <div className="course-enroll-prompt">
         <div className="enroll-card">
@@ -450,20 +441,15 @@ export default function CoursePage() {
         </div>
         {currentLesson ? (
           <>
-            {!showQuiz && <VideoPlayer videoUrl={currentLesson.videoUrl} />}
-            {!showQuiz && currentLesson.description && (
+            <VideoPlayer videoUrl={currentLesson.videoUrl} />
+            {currentLesson.description && (
               <div className="lesson-description">
                 <h3>Descrição</h3>
                 <p>{currentLesson.description}</p>
               </div>
             )}
-            {!showQuiz && (
-              <LessonAttachments
-                lessonId={currentLesson.id}
-                canEdit={user?.role === "INSTRUCTOR" || user?.role === "ADMIN"}
-              />
-            )}
-            {!showQuiz && isEnrolled && user?.role === "STUDENT" && (
+            <LessonAttachments lessonId={currentLesson.id} canEdit={isOwner} />
+            {isLearner && (
               <div className="lesson-actions">
                 <button
                   onClick={handleToggleLessonComplete}
@@ -475,14 +461,10 @@ export default function CoursePage() {
             )}
             {showQuiz && currentModuleId && (
               <div className="quiz-section">
-                <QuizComponent
-                  moduleId={currentModuleId}
-                  onComplete={() => {
-                  }}
-                />
+                <QuizComponent key={currentModuleId} moduleId={currentModuleId} />
               </div>
             )}
-            {!showQuiz && isEnrolled && (
+            {isEnrolled && (
               <div className="comments-section">
                 <h3>Comentários ({comments.length})</h3>
                 <form onSubmit={handleSubmitComment} className="comment-form">
@@ -518,16 +500,18 @@ export default function CoursePage() {
                               <span className="comment-date">{formatDate(comment.createdAt)}</span>
                             </div>
                           </div>
-                          {comment.user.id === user?.id && (
+                          {(comment.user.id === user?.id || canModerateComments) && (
                             <div className="comment-actions">
+                              {comment.user.id === user?.id && (
+                                <button
+                                  onClick={() => handleEditComment(comment)}
+                                  className="btn-secondary"
+                                >
+                                  Editar
+                                </button>
+                              )}
                               <button
-                                onClick={() => handleEditComment(comment)}
-                                className="btn-secondary"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => handleDeleteComment(comment.id)}
+                                onClick={() => handleDeleteComment(comment.id, comment.replies?.length ?? 0)}
                                 className="btn-danger-small"
                               >
                                 Deletar
@@ -619,14 +603,16 @@ export default function CoursePage() {
                                       <span className="comment-date">{formatDate(reply.createdAt)}</span>
                                     </div>
                                   </div>
-                                  {reply.user.id === user?.id && (
+                                  {(reply.user.id === user?.id || canModerateComments) && (
                                     <div className="comment-actions">
-                                      <button
-                                        onClick={() => handleEditComment(reply)}
-                                        className="btn-secondary"
-                                      >
-                                        Editar
-                                      </button>
+                                      {reply.user.id === user?.id && (
+                                        <button
+                                          onClick={() => handleEditComment(reply)}
+                                          className="btn-secondary"
+                                        >
+                                          Editar
+                                        </button>
+                                      )}
                                       <button
                                         onClick={() => handleDeleteComment(reply.id)}
                                         className="btn-danger-small"
@@ -705,7 +691,7 @@ export default function CoursePage() {
               <strong>Categoria:</strong> {course.category.name}
             </div>
           )}
-          {progress && isEnrolled && (
+          {progress && isLearner && (
             <div className="progress-info">
               <div className="progress-header">
                 <strong>Progresso do Curso</strong>
@@ -760,19 +746,12 @@ export default function CoursePage() {
                       if (!id) return;
                       try {
                         setCertificateLoading(true);
-                        const certRes = await api.post("/certificates/generate", { courseId: id });
-                        if (certRes.data.pdfUrl) {
-                          const certsRes = await api.get("/certificates/my");
-                          const courseCert = certsRes.data.find((cert: any) => cert.courseId === id);
-                          if (courseCert) {
-                            setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
-                            showToast("🎉 Certificado gerado com sucesso!", "success");
-                          }
-                        }
-                      } catch (err: any) {
+                        const certRes = await api.post<{ id: string; pdfUrl: string }>("/certificates/generate", { courseId: id });
+                        setCertificate({ id: certRes.data.id, pdfUrl: certRes.data.pdfUrl });
+                        showToast("🎉 Certificado gerado com sucesso!", "success");
+                      } catch (err) {
                         showToast(
-                          err.response?.data?.error ||
-                            "Erro ao gerar certificado. Verifique se todas as aulas foram concluídas.",
+                          getErrorMessage(err, "Erro ao gerar certificado. Verifique se todas as aulas foram concluídas."),
                           "error"
                         );
                       } finally {
@@ -812,7 +791,7 @@ export default function CoursePage() {
             </div>
           ))}
         </div>
-        {id && <CourseTags courseId={id} canEdit={user?.role === "INSTRUCTOR" || user?.role === "ADMIN"} />}
+        {id && <CourseTags courseId={id} canEdit={isOwner} />}
       </aside>
       {id && (
         <div className="reviews-section" style={{ marginTop: "2rem", padding: "1rem", maxWidth: "1200px", margin: "2rem auto" }}>

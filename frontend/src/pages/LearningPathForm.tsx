@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { LearningPath } from "../types";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 export default function LearningPathFormPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,18 +24,7 @@ export default function LearningPathFormPage() {
 
   const isEditing = !!id;
 
-  useEffect(() => {
-    if (user?.role !== "INSTRUCTOR" && user?.role !== "ADMIN") {
-      navigate("/catalog");
-      return;
-    }
-
-    if (isEditing && id) {
-      fetchLearningPath();
-    }
-  }, [id, user]);
-
-  const fetchLearningPath = async () => {
+  const fetchLearningPath = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get<LearningPath>(`/learning-paths/${id}`);
@@ -48,12 +37,23 @@ export default function LearningPathFormPage() {
         estimatedHours: path.estimatedHours?.toString() || "",
         status: path.status,
       });
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao carregar trilha");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao carregar trilha"));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (user?.role !== "INSTRUCTOR" && user?.role !== "ADMIN") {
+      navigate("/catalog");
+      return;
+    }
+
+    if (isEditing && id) {
+      fetchLearningPath();
+    }
+  }, [id, user, fetchLearningPath, isEditing, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +64,7 @@ export default function LearningPathFormPage() {
 
     try {
       setLoading(true);
-      const data: any = {
+      const data = {
         title: formData.title,
         description: formData.description || undefined,
         coverImageUrl: formData.coverImageUrl || undefined,
@@ -80,8 +80,8 @@ export default function LearningPathFormPage() {
       }
 
       navigate("/instructor/learning-paths");
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao salvar trilha");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao salvar trilha"));
     } finally {
       setLoading(false);
     }

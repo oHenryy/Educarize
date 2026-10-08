@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { CourseCategory } from "../types";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 type CourseFormData = {
   title: string;
@@ -34,7 +34,12 @@ export default function CourseFormPage() {
 
   const [categories, setCategories] = useState<CourseCategory[]>([]);
   const [loading, setLoading] = useState(false);
+  // No modo edição o formulário só aparece depois de carregar o curso,
+  // para que nada digitado antes seja sobrescrito pelos dados que chegam.
+  const [loadingCourse, setLoadingCourse] = useState(isEdit);
+  const [originalStatus, setOriginalStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isAdmin = user?.role === "ADMIN";
 
   useEffect(() => {
     setFormData({
@@ -48,6 +53,8 @@ export default function CourseFormPage() {
     });
     setError(null);
     setLoading(false);
+    setLoadingCourse(isEdit);
+    setOriginalStatus(null);
 
     if (user?.role !== "INSTRUCTOR" && user?.role !== "ADMIN") {
       navigate("/catalog");
@@ -60,7 +67,6 @@ export default function CourseFormPage() {
         setCategories(categoriesRes.data);
 
         if (isEdit && id) {
-          setLoading(true);
           const courseRes = await api.get(`/courses/${id}`);
           const course = courseRes.data;
           
@@ -78,11 +84,12 @@ export default function CourseFormPage() {
             categoryId: course.categoryId || "",
             status: course.status || "DRAFT",
           });
+          setOriginalStatus(course.status || "DRAFT");
         }
-      } catch (err: any) {
-        setError(err.response?.data?.error || "Erro ao carregar dados");
+      } catch (err) {
+        setError(getErrorMessage(err, "Erro ao carregar dados"));
       } finally {
-        setLoading(false);
+        setLoadingCourse(false);
       }
     }
     fetchData();
@@ -100,11 +107,13 @@ export default function CourseFormPage() {
       } else {
         const { data } = await api.post("/courses", formData);
         showToast("Curso criado com sucesso!", "success");
+        // Segue para a edição, onde é possível publicar o curso.
         navigate(`/instructor/courses/${data.id}/edit`);
+        return;
       }
       navigate("/instructor/courses");
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao salvar curso");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao salvar curso"));
     } finally {
       setLoading(false);
     }
@@ -126,6 +135,9 @@ export default function CourseFormPage() {
 
       {error && <p className="error">{error}</p>}
 
+      {loadingCourse ? (
+        <div className="loading">Carregando curso...</div>
+      ) : (
       <form onSubmit={handleSubmit} className="course-form">
         <div className="form-group">
           <label htmlFor="title">Título *</label>
@@ -210,12 +222,18 @@ export default function CourseFormPage() {
               id="status"
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+              disabled={!isAdmin && originalStatus === "SUSPENDED"}
             >
               <option value="DRAFT">Rascunho</option>
               <option value="PUBLISHED">Publicado</option>
               <option value="ARCHIVED">Arquivado</option>
-              <option value="SUSPENDED">Suspenso</option>
+              {(isAdmin || originalStatus === "SUSPENDED") && <option value="SUSPENDED">Suspenso</option>}
             </select>
+            {!isAdmin && originalStatus === "SUSPENDED" && (
+              <small className="muted">
+                Este curso foi suspenso por um administrador e só pode ser reativado por ele.
+              </small>
+            )}
           </div>
         )}
 
@@ -228,6 +246,7 @@ export default function CourseFormPage() {
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }

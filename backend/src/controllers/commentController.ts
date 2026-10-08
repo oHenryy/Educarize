@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { CommentService } from "../services/commentService";
+import { sendError } from "../utils/httpError";
 
 const commentService = new CommentService();
 
@@ -7,10 +8,10 @@ export class CommentController {
   async listByLesson(req: Request, res: Response): Promise<void> {
     try {
       const { lessonId } = req.params;
-      const comments = await commentService.listByLesson(lessonId);
+      const comments = await commentService.listByLesson(lessonId, req.user!);
       res.json(comments);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      sendError(res, error);
     }
   }
 
@@ -24,13 +25,13 @@ export class CommentController {
 
       const comment = await commentService.create(
         lessonId,
-        req.user!.userId,
+        req.user!,
         content,
         parentId
       );
       res.status(201).json(comment);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      sendError(res, error);
     }
   }
 

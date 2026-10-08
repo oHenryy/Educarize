@@ -1,11 +1,16 @@
 import { prisma } from "../config/database";
 import { NotificationService } from "./notificationService";
+import { isEnrolled } from "../utils/courseAccess";
+
+function validateRating(rating: unknown): void {
+  if (typeof rating !== "number" || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new Error("Avaliação deve ser um número inteiro entre 1 e 5 estrelas");
+  }
+}
 
 export class ReviewService {
   async createReview(userId: string, courseId: string, rating: number, comment?: string) {
-    if (rating < 1 || rating > 5) {
-      throw new Error("Avaliação deve ser entre 1 e 5 estrelas");
-    }
+    validateRating(rating);
 
     const course = await prisma.course.findUnique({
       where: { id: courseId },
@@ -13,6 +18,14 @@ export class ReviewService {
 
     if (!course) {
       throw new Error("Curso não encontrado");
+    }
+
+    if (course.instructorId === userId) {
+      throw new Error("Você não pode avaliar seu próprio curso");
+    }
+
+    if (!(await isEnrolled(userId, courseId))) {
+      throw new Error("Você precisa estar matriculado no curso para avaliá-lo");
     }
 
     const existing = await prisma.courseReview.findUnique({
@@ -75,8 +88,8 @@ export class ReviewService {
       throw new Error("Sem permissão para editar esta avaliação");
     }
 
-    if (rating !== undefined && (rating < 1 || rating > 5)) {
-      throw new Error("Avaliação deve ser entre 1 e 5 estrelas");
+    if (rating !== undefined) {
+      validateRating(rating);
     }
 
     return await prisma.courseReview.update({

@@ -45,7 +45,7 @@ export const adminController = {
         return res.status(400).json({ error: "Papel é obrigatório" });
       }
 
-      const updated = await adminService.updateUserRole(id, role);
+      const updated = await adminService.updateUserRole(id, role, req.user!.userId);
       res.json(updated);
     } catch (error: any) {
       res.status(400).json({ error: error.message || "Erro ao atualizar papel do usuário" });
@@ -72,13 +72,29 @@ export const adminController = {
     }
   },
 
+  async transferContent(req: Request, res: Response) {
+    try {
+      const { targetUserId } = req.body;
+      if (!targetUserId) {
+        return res.status(400).json({ error: "targetUserId é obrigatório" });
+      }
+
+      const result = await adminService.transferContent(req.params.id, targetUserId, req.user!.userId);
+      res.json(result);
+    } catch (error: any) {
+      const status = error.message === "Usuário não encontrado" ? 404 : 400;
+      res.status(status).json({ error: error.message || "Erro ao transferir conteúdo" });
+    }
+  },
+
   async deleteUser(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const result = await adminService.deleteUser(id);
+      const result = await adminService.deleteUser(id, req.user!.userId);
       res.json(result);
     } catch (error: any) {
-      res.status(404).json({ error: error.message || "Erro ao deletar usuário" });
+      const status = error.message === "Usuário não encontrado" ? 404 : 400;
+      res.status(status).json({ error: error.message || "Erro ao deletar usuário" });
     }
   },
 };

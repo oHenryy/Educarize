@@ -76,7 +76,8 @@ export interface QuizQuestion {
   question: string;
   type: string;
   options: string[];
-  correctAnswer: number;
+  /** Enviado apenas para o dono do curso ou administradores. */
+  correctAnswer?: number;
   order: number;
 }
 
@@ -255,3 +256,34 @@ export interface Conversation {
   unreadCount: number;
 }
 
+
+/** Parâmetros de query string enviados ao axios. */
+export type QueryParams = Record<string, string | number | boolean | string[] | undefined>;
+
+export interface MyEnrollment {
+  id: string;
+  userId: string;
+  courseId: string;
+  enrolledAt: string;
+  course: Course;
+}
+
+export interface SearchCourse extends Course {
+  averageRating: number;
+  totalReviews: number;
+  tags: CourseTag[];
+}
+
+export interface SearchSuggestions {
+  courses: { id: string; title: string }[];
+  tags: { id: string; name: string }[];
+}
+
+export interface LearningPathProgress {
+  enrollment: LearningPathEnrollment;
+  progress: number;
+  totalCourses: number;
+  completedCourses: number;
+  totalLessons: number;
+  completedLessons: number;
+}

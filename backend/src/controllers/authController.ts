@@ -27,11 +27,13 @@ export class AuthController {
 
   async getUsers(req: Request, res: Response): Promise<void> {
     try {
+      // E-mail só é exposto para administradores.
+      const isAdmin = req.user!.role === "ADMIN";
       const users = await prisma.user.findMany({
         select: {
           id: true,
           name: true,
-          email: true,
+          email: isAdmin,
           avatarUrl: true,
           role: true,
         },

@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { Conversation, Message, User } from "../types";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 export default function MessagesPage() {
   const { user } = useAuth();
@@ -19,7 +19,14 @@ export default function MessagesPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mantém a conversa selecionada acessível aos handlers do socket sem recriar a conexão.
+  const selectedUserIdRef = useRef<string | null>(null);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    selectedUserIdRef.current = selectedUserId;
+    setTyping(null);
+  }, [selectedUserId]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -44,12 +51,17 @@ export default function MessagesPage() {
     });
 
     socket.on("new_message", (message: Message) => {
-      if (message.senderId === selectedUserId || message.receiverId === selectedUserId) {
+      const currentUserId = selectedUserIdRef.current;
+      if (message.senderId === currentUserId || message.receiverId === currentUserId) {
         setMessages((prev) => {
           if (prev.find((m) => m.id === message.id)) return prev;
           return [...prev, message];
         });
         scrollToBottom();
+        // A conversa está aberta: a mensagem já foi vista.
+        if (message.senderId === currentUserId) {
+          socket.emit("mark_conversation_as_read", { userId: currentUserId });
+        }
       }
       fetchConversations();
     });
@@ -71,13 +83,18 @@ export default function MessagesPage() {
     });
 
     socket.on("user_typing", (data: { userId: string; typing: boolean }) => {
-      if (data.userId === selectedUserId) {
+      if (data.userId === selectedUserIdRef.current) {
         setTyping(data);
       }
     });
 
     socket.on("error", (error: { message: string }) => {
       console.error("Erro Socket.io:", error);
+      showToast(error?.message || "Erro na conexão de mensagens", "error");
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("Erro de conexão Socket.io:", error);
     });
 
     fetchConversations();
@@ -85,8 +102,10 @@ export default function MessagesPage() {
 
     return () => {
       socket.disconnect();
+      socketRef.current = null;
     };
-  }, [user, selectedUserId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   useEffect(() => {
     scrollToBottom();
@@ -100,7 +119,7 @@ export default function MessagesPage() {
     try {
       const res = await api.get<Conversation[]>("/messages/conversations");
       setConversations(res.data);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar conversas:", err);
     } finally {
       setLoading(false);
@@ -111,7 +130,7 @@ export default function MessagesPage() {
     try {
       const res = await api.get<User[]>("/auth/users");
       setUsers(res.data.filter((u) => u.id !== user?.id));
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar usuários:", err);
     }
   };
@@ -123,7 +142,7 @@ export default function MessagesPage() {
       
       await api.put(`/messages/conversations/${userId}/read`);
       fetchConversations();
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar mensagens:", err);
     }
   };
@@ -144,7 +163,12 @@ export default function MessagesPage() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !selectedUserId || sending || !socketRef.current) return;
+    if (!newMessage.trim() || !selectedUserId || sending) return;
+
+    if (!socketRef.current?.connected) {
+      showToast("Sem conexão com o servidor de mensagens. Tente novamente em instantes.", "error");
+      return;
+    }
 
     try {
       setSending(true);
@@ -159,8 +183,8 @@ export default function MessagesPage() {
       }
       socketRef.current.emit("typing_stop", { receiverId: selectedUserId });
       setTyping(null);
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao enviar mensagem", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao enviar mensagem"), "error");
     } finally {
       setSending(false);
     }
@@ -230,7 +254,7 @@ export default function MessagesPage() {
                     </div>
                     <div className="user-info">
                       <strong>{u.name}</strong>
-                      <small>{u.email}</small>
+                      <small>{u.email || u.role}</small>
                     </div>
                   </button>
                 ))}

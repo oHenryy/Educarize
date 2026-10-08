@@ -1,6 +1,8 @@
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
 import { NotificationService } from "./notificationService";
+import { HttpError } from "../utils/httpError";
+import { AuthUser } from "../utils/courseAccess";
 
 export interface CreateLearningPathData {
   title: string;
@@ -22,11 +24,18 @@ export interface UpdateLearningPathData {
 }
 
 export class LearningPathService {
-  async listLearningPaths(filters: { status?: string; instructorId?: string; difficulty?: string }) {
+  async listLearningPaths(
+    filters: { status?: string; instructorId?: string; difficulty?: string },
+    user?: AuthUser
+  ) {
     const where: any = {};
 
-    if (filters.status) {
-      where.status = filters.status;
+    // Trilhas não publicadas só aparecem para administradores ou para o próprio instrutor.
+    const canSeeUnpublished =
+      user?.role === "ADMIN" || (!!user && !!filters.instructorId && filters.instructorId === user.userId);
+
+    if (canSeeUnpublished) {
+      if (filters.status) where.status = filters.status;
     } else {
       where.status = "PUBLISHED";
     }
@@ -73,7 +82,7 @@ export class LearningPathService {
     });
   }
 
-  async getLearningPathById(id: string) {
+  async getLearningPathById(id: string, user?: AuthUser) {
     const learningPath = await prisma.learningPath.findUnique({
       where: { id },
       include: {
@@ -117,6 +126,20 @@ export class LearningPathService {
 
     if (!learningPath) {
       throw new Error("Trilha de aprendizado não encontrada");
+    }
+
+    if (learningPath.status !== "PUBLISHED") {
+      const isOwnerOrAdmin =
+        !!user && (user.role === "ADMIN" || user.userId === learningPath.instructorId);
+      const isEnrolled =
+        !!user &&
+        !!(await prisma.learningPathEnrollment.findUnique({
+          where: { userId_learningPathId: { userId: user.userId, learningPathId: id } },
+          select: { id: true },
+        }));
+      if (!isOwnerOrAdmin && !isEnrolled) {
+        throw new Error("Trilha de aprendizado não encontrada");
+      }
     }
 
     return learningPath;
@@ -252,10 +275,10 @@ export class LearningPathService {
   async addCourseToPath(
     learningPathId: string,
     courseId: string,
-    order?: number,
-    isRequired?: boolean,
     userId: string,
-    userRole: string
+    userRole: string,
+    order?: number,
+    isRequired?: boolean
   ) {
     const learningPath = await prisma.learningPath.findUnique({
       where: { id: learningPathId },
@@ -275,6 +298,18 @@ export class LearningPathService {
 
     if (!course) {
       throw new Error("Curso não encontrado");
+    }
+
+    if (course.status !== "PUBLISHED") {
+      throw new HttpError(400, "Apenas cursos publicados podem ser adicionados à trilha");
+    }
+
+    const alreadyInPath = await prisma.learningPathCourse.findUnique({
+      where: { learningPathId_courseId: { learningPathId, courseId } },
+      select: { id: true },
+    });
+    if (alreadyInPath) {
+      throw new HttpError(409, "Este curso já faz parte da trilha");
     }
 
     const maxOrder = await prisma.learningPathCourse.findFirst({
@@ -327,6 +362,37 @@ export class LearningPathService {
         courseId,
       },
     });
+  }
+
+  async reorderCourses(learningPathId: string, courseIds: string[], userId: string, userRole: string) {
+    const learningPath = await prisma.learningPath.findUnique({
+      where: { id: learningPathId },
+      include: { courses: { select: { courseId: true } } },
+    });
+
+    if (!learningPath) {
+      throw new Error("Trilha de aprendizado não encontrada");
+    }
+
+    if (learningPath.instructorId !== userId && userRole !== "ADMIN") {
+      throw new Error("Sem permissão para reordenar cursos desta trilha");
+    }
+
+    const current = new Set(learningPath.courses.map((c) => c.courseId));
+    if (courseIds.length !== current.size || !courseIds.every((id) => current.has(id))) {
+      throw new HttpError(400, "A lista deve conter exatamente os cursos atuais da trilha");
+    }
+
+    await prisma.$transaction(
+      courseIds.map((courseId, index) =>
+        prisma.learningPathCourse.update({
+          where: { learningPathId_courseId: { learningPathId, courseId } },
+          data: { order: index },
+        })
+      )
+    );
+
+    return this.getLearningPathById(learningPathId, { userId, role: userRole });
   }
 
   async enrollInPath(learningPathId: string, userId: string) {
@@ -399,7 +465,8 @@ export class LearningPathService {
     }
 
     for (const pathCourse of learningPath.courses) {
-      if (pathCourse.isRequired) {
+      // Só matricula automaticamente em cursos obrigatórios e publicados.
+      if (pathCourse.isRequired && pathCourse.course.status === "PUBLISHED") {
         try {
           await prisma.enrollment.upsert({
             where: {
@@ -465,19 +532,25 @@ export class LearningPathService {
       throw new Error("Você não está matriculado nesta trilha");
     }
 
-    const totalCourses = enrollment.learningPath.courses.length;
+    // O progresso considera apenas cursos obrigatórios (ou todos, se nenhum for marcado como obrigatório).
+    const allCourses = enrollment.learningPath.courses;
+    const requiredCourses = allCourses.some((c) => c.isRequired)
+      ? allCourses.filter((c) => c.isRequired)
+      : allCourses;
+
+    const totalCourses = requiredCourses.length;
     let completedCourses = 0;
     let totalLessons = 0;
     let completedLessons = 0;
 
-    for (const pathCourse of enrollment.learningPath.courses) {
+    for (const pathCourse of requiredCourses) {
       const courseLessons = pathCourse.course.modules.reduce(
         (sum, mod) => sum + mod.lessons.length,
         0
       );
       totalLessons += courseLessons;
 
-      const courseProgress = await prisma.userProgress.findMany({
+      const courseCompleted = await prisma.userProgress.count({
         where: {
           userId,
           lesson: {
@@ -489,26 +562,28 @@ export class LearningPathService {
         },
       });
 
-      completedLessons += courseProgress.length;
+      completedLessons += courseCompleted;
 
-      if (courseLessons > 0 && courseProgress.length === courseLessons) {
+      if (courseLessons > 0 && courseCompleted >= courseLessons) {
         completedCourses++;
       }
     }
 
     const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
-    await prisma.learningPathEnrollment.update({
-      where: { id: enrollment.id },
-      data: { progress },
-    });
+    const justCompleted = progress === 100 && !enrollment.completedAt;
 
-    if (progress === 100 && !enrollment.completedAt) {
+    if (progress !== enrollment.progress || justCompleted) {
       await prisma.learningPathEnrollment.update({
         where: { id: enrollment.id },
-        data: { completedAt: new Date() },
+        data: {
+          progress,
+          ...(justCompleted && { completedAt: new Date() }),
+        },
       });
+    }
 
+    if (justCompleted) {
       const notificationService = new NotificationService();
       await notificationService
         .createNotification(

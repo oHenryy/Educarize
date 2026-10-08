@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { useCallback, useEffect, useState } from "react";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { Tag, CourseTag } from "../types";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 interface CourseTagsProps {
   courseId: string;
@@ -19,32 +19,32 @@ export default function CourseTags({ courseId, canEdit = false }: CourseTagsProp
   const [selectedTagId, setSelectedTagId] = useState("");
   const { showToast } = useToast();
 
+  const fetchTags = useCallback(async () => {
+    try {
+      const res = await api.get<CourseTag[]>(`/tags/courses/${courseId}`);
+      setTags(res.data);
+    } catch (err) {
+      console.error("Erro ao carregar tags:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [courseId]);
+
+  const fetchAllTags = useCallback(async () => {
+    try {
+      const res = await api.get<Tag[]>("/tags");
+      setAllTags(res.data);
+    } catch (err) {
+      console.error("Erro ao carregar todas as tags:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTags();
     if (canEdit) {
       fetchAllTags();
     }
-  }, [courseId, canEdit]);
-
-  const fetchTags = async () => {
-    try {
-      const res = await api.get<CourseTag[]>(`/tags/courses/${courseId}`);
-      setTags(res.data);
-    } catch (err: any) {
-      console.error("Erro ao carregar tags:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAllTags = async () => {
-    try {
-      const res = await api.get<Tag[]>("/tags");
-      setAllTags(res.data);
-    } catch (err: any) {
-      console.error("Erro ao carregar todas as tags:", err);
-    }
-  };
+  }, [courseId, canEdit, fetchTags, fetchAllTags]);
 
   const handleAddTag = async () => {
     if (!newTagName.trim() && !selectedTagId) {
@@ -63,8 +63,8 @@ export default function CourseTags({ courseId, canEdit = false }: CourseTagsProp
       setShowAddForm(false);
       fetchTags();
       fetchAllTags();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao adicionar tag", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao adicionar tag"), "error");
     }
   };
 
@@ -74,8 +74,8 @@ export default function CourseTags({ courseId, canEdit = false }: CourseTagsProp
     try {
       await api.delete(`/tags/courses/${courseId}/${tagId}`);
       fetchTags();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao remover tag", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao remover tag"), "error");
     }
   };
 

@@ -1,7 +1,8 @@
 import { useMemo, type ReactElement, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import "./App.css";
-import { AuthProvider, useAuth } from "./context/AuthContext";
+import { AuthProvider } from "./context/AuthContext";
+import { useAuth } from "./context/useAuth";
 import { ToastProvider } from "./context/ToastContext";
 import LoginPage from "./pages/Login";
 import RegisterPage from "./pages/Register";

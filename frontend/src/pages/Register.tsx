@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { User, Role } from "../types";
 
 const roles: Role[] = ["STUDENT", "INSTRUCTOR"];
@@ -27,8 +27,8 @@ export default function RegisterPage() {
       );
       login({ token: data.token, user: data.user });
       navigate("/catalog", { replace: true });
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Falha ao registrar");
+    } catch (err) {
+      setError(getErrorMessage(err, "Falha ao registrar"));
     } finally {
       setLoading(false);
     }

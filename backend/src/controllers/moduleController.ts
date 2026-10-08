@@ -1,15 +1,16 @@
 import { Request, Response } from "express";
 import { ModuleService } from "../services/moduleService";
+import { sendError } from "../utils/httpError";
 
 const moduleService = new ModuleService();
 
 export class ModuleController {
   async listByCourse(req: Request, res: Response): Promise<void> {
     try {
-      const modules = await moduleService.listByCourse(req.params.courseId);
+      const modules = await moduleService.listByCourse(req.params.courseId, req.user!);
       res.json(modules);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      sendError(res, error);
     }
   }
 

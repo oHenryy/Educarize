@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
-import type { LearningPath, LearningPathCourse } from "../types";
-import { useToast } from "../context/ToastContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
+import type { LearningPath, LearningPathCourse, LearningPathProgress } from "../types";
+import { useToast } from "../context/useToast";
 
 export default function LearningPathDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -11,11 +11,33 @@ export default function LearningPathDetailPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [learningPath, setLearningPath] = useState<LearningPath | null>(null);
-  const [progress, setProgress] = useState<any>(null);
+  const [progress, setProgress] = useState<LearningPathProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
+
+  const fetchLearningPath = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await api.get<LearningPath>(`/learning-paths/${id}`);
+      setLearningPath(res.data);
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao carregar trilha"));
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  const checkEnrollment = useCallback(async () => {
+    try {
+      const res = await api.get<LearningPathProgress>(`/learning-paths/${id}/progress`);
+      setProgress(res.data);
+      setIsEnrolled(true);
+    } catch {
+      setIsEnrolled(false);
+    }
+  }, [id]);
 
   useEffect(() => {
     if (id) {
@@ -24,29 +46,7 @@ export default function LearningPathDetailPage() {
         checkEnrollment();
       }
     }
-  }, [id, user]);
-
-  const fetchLearningPath = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get<LearningPath>(`/learning-paths/${id}`);
-      setLearningPath(res.data);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao carregar trilha");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const checkEnrollment = async () => {
-    try {
-      const res = await api.get(`/learning-paths/${id}/progress`);
-      setProgress(res.data);
-      setIsEnrolled(true);
-    } catch (err: any) {
-      setIsEnrolled(false);
-    }
-  };
+  }, [id, user, fetchLearningPath, checkEnrollment]);
 
   const handleEnroll = async () => {
     if (!user) {
@@ -59,8 +59,8 @@ export default function LearningPathDetailPage() {
       await api.post(`/learning-paths/${id}/enroll`);
       setIsEnrolled(true);
       await checkEnrollment();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao se matricular na trilha", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao se matricular na trilha"), "error");
     } finally {
       setEnrolling(false);
     }

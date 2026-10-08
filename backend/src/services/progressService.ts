@@ -1,9 +1,20 @@
 import { prisma } from "../config/database";
 import { CertificateService } from "./certificateService";
 import { NotificationService } from "./notificationService";
+import { HttpError } from "../utils/httpError";
+import { getCourseIdByLesson, isEnrolled } from "../utils/courseAccess";
+
+async function assertEnrolledInLessonCourse(userId: string, lessonId: string): Promise<void> {
+  const courseId = await getCourseIdByLesson(lessonId);
+  if (!(await isEnrolled(userId, courseId))) {
+    throw new HttpError(403, "Você precisa estar matriculado no curso para registrar progresso");
+  }
+}
 
 export class ProgressService {
   async markLessonCompleted(userId: string, lessonId: string) {
+    await assertEnrolledInLessonCourse(userId, lessonId);
+
     const existing = await prisma.userProgress.findUnique({
       where: {
         userId_lessonId: {
@@ -35,10 +46,15 @@ export class ProgressService {
         return progress;
       }
     } else {
-      progress = await prisma.userProgress.create({
-        data: {
+      progress = await prisma.userProgress.upsert({
+        where: { userId_lessonId: { userId, lessonId } },
+        create: {
           userId,
           lessonId,
+          completed: true,
+          completedAt: new Date(),
+        },
+        update: {
           completed: true,
           completedAt: new Date(),
         },
@@ -90,6 +106,8 @@ export class ProgressService {
   }
 
   async markLessonIncomplete(userId: string, lessonId: string) {
+    await assertEnrolledInLessonCourse(userId, lessonId);
+
     const existing = await prisma.userProgress.findUnique({
       where: {
         userId_lessonId: {

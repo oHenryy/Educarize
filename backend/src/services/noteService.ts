@@ -1,14 +1,10 @@
 import { prisma } from "../config/database";
+import { AuthUser, assertCourseContentAccess, getCourseIdByLesson } from "../utils/courseAccess";
 
 export class NoteService {
-  async createNote(userId: string, lessonId: string, content: string) {
-    const lesson = await prisma.lesson.findUnique({
-      where: { id: lessonId },
-    });
-
-    if (!lesson) {
-      throw new Error("Aula não encontrada");
-    }
+  async createNote(user: AuthUser, lessonId: string, content: string) {
+    const userId = user.userId;
+    await assertCourseContentAccess(await getCourseIdByLesson(lessonId), user);
 
     return await prisma.note.create({
       data: {

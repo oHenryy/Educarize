@@ -1,18 +1,23 @@
 import { Request, Response } from "express";
 import { CourseService, CreateCourseData, UpdateCourseData } from "../services/courseService";
+import { sendError } from "../utils/httpError";
 
 const courseService = new CourseService();
 
 export class CourseController {
   async list(req: Request, res: Response): Promise<void> {
     try {
-      const { categoryId, difficulty, status, search } = req.query;
-      const courses = await courseService.listCourses({
-        categoryId: categoryId as string,
-        difficulty: difficulty as string,
-        status: status as string,
-        search: search as string,
-      });
+      const { categoryId, difficulty, status, search, instructorId } = req.query;
+      const courses = await courseService.listCourses(
+        {
+          categoryId: categoryId as string,
+          difficulty: difficulty as string,
+          status: status as string,
+          search: search as string,
+          instructorId: instructorId as string,
+        },
+        req.user!
+      );
       res.json(courses);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -21,14 +26,10 @@ export class CourseController {
 
   async getById(req: Request, res: Response): Promise<void> {
     try {
-      const course = await courseService.getCourseById(req.params.id);
+      const course = await courseService.getCourseById(req.params.id, req.user!);
       res.json(course);
     } catch (error: any) {
-      if (error.message === "Curso não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+      sendError(res, error);
     }
   }
 
@@ -101,7 +102,9 @@ export class CourseController {
     } catch (error: any) {
       if (error.message === "Curso não encontrado") {
         res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão") || error.message.includes("Categoria não encontrada") || error.message.includes("Dificuldade inválida") || error.message.includes("Status inválido")) {
+      } else if (error.message.includes("Sem permissão")) {
+        res.status(403).json({ error: error.message });
+      } else if (error.message.includes("Categoria não encontrada") || error.message.includes("Dificuldade inválida") || error.message.includes("Status inválido")) {
         res.status(400).json({ error: error.message });
       } else {
         res.status(500).json({ error: error.message });

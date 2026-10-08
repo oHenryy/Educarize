@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { LearningPath } from "../types";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
@@ -13,22 +13,22 @@ export default function LearningPathsPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "my">("all");
 
-  useEffect(() => {
-    fetchLearningPaths();
-  }, [filter]);
-
-  const fetchLearningPaths = async () => {
+  const fetchLearningPaths = useCallback(async () => {
     try {
       setLoading(true);
       const endpoint = filter === "my" ? "/learning-paths/my" : "/learning-paths";
       const res = await api.get<LearningPath[]>(endpoint);
       setLearningPaths(res.data);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao carregar trilhas");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao carregar trilhas"));
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter]);
+
+  useEffect(() => {
+    fetchLearningPaths();
+  }, [filter, fetchLearningPaths]);
 
   if (loading) {
     return <div className="loading">Carregando trilhas...</div>;

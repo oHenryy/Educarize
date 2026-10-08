@@ -1,9 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { CourseReview } from "../types";
 import StarRating from "./StarRating";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 interface CourseReviewsProps {
   courseId: string;
@@ -20,11 +20,7 @@ export default function CourseReviews({ courseId }: CourseReviewsProps) {
   const [myReview, setMyReview] = useState<CourseReview | null>(null);
   const { showToast } = useToast();
 
-  useEffect(() => {
-    fetchReviews();
-  }, [courseId]);
-
-  const fetchReviews = async () => {
+  const fetchReviews = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get(`/reviews/course/${courseId}`);
@@ -36,12 +32,16 @@ export default function CourseReviews({ courseId }: CourseReviewsProps) {
         const review = myReviewsRes.data.find((r: CourseReview) => r.courseId === courseId);
         setMyReview(review || null);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar avaliações:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [courseId, user]);
+
+  useEffect(() => {
+    fetchReviews();
+  }, [courseId, fetchReviews]);
 
   const handleSubmitReview = async (e: FormEvent) => {
     e.preventDefault();
@@ -60,8 +60,8 @@ export default function CourseReviews({ courseId }: CourseReviewsProps) {
       setRating(0);
       setComment("");
       fetchReviews();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao salvar avaliação", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao salvar avaliação"), "error");
     }
   };
 
@@ -72,8 +72,8 @@ export default function CourseReviews({ courseId }: CourseReviewsProps) {
       await api.delete(`/reviews/${reviewId}`);
       setMyReview(null);
       fetchReviews();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar avaliação", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar avaliação"), "error");
     }
   };
 

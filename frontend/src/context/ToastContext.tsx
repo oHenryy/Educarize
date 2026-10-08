@@ -1,31 +1,10 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useState,
-  type ReactNode,
-} from "react";
-
-type ToastType = "success" | "error" | "info";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { ToastContext, type ToastType } from "./toast-context";
 
 interface Toast {
   id: number;
   message: string;
   type: ToastType;
-}
-
-interface ToastContextValue {
-  showToast: (message: string, type?: ToastType) => void;
-}
-
-const ToastContext = createContext<ToastContextValue | undefined>(undefined);
-
-export function useToast() {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    throw new Error("useToast deve ser usado dentro de ToastProvider");
-  }
-  return ctx;
 }
 
 interface ToastProviderProps {
@@ -34,9 +13,11 @@ interface ToastProviderProps {
 
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // Contador em vez de Date.now(): dois toasts no mesmo milissegundo teriam a mesma key.
+  const nextId = useRef(0);
 
   const showToast = useCallback((message: string, type: ToastType = "info") => {
-    const id = Date.now();
+    const id = ++nextId.current;
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -56,5 +37,3 @@ export function ToastProvider({ children }: ToastProviderProps) {
     </ToastContext.Provider>
   );
 }
-
-

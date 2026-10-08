@@ -1,25 +1,40 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
-import { useToast } from "../context/ToastContext";
+import { api, getErrorMessage, getErrorStatus, isNetworkError } from "../api/client";
+import { useAuth } from "../context/useAuth";
+import { useToast } from "../context/useToast";
 import type { Module, Lesson, Quiz, QuizQuestion } from "../types";
+import { normalizeQuiz, parseOptions } from "../utils/quiz";
 
 type ModuleWithLessons = Module & {
   lessons: Lesson[];
   quiz?: Quiz | null;
 };
 
-const parseOptions = (options: any): string[] => {
-  if (Array.isArray(options)) return options;
-  if (typeof options === 'string') {
-    try {
-      return JSON.parse(options);
-    } catch {
-      return [];
-    }
+const parseScore = (value: FormDataEntryValue | null, fallback: number): number => {
+  const parsed = parseInt(value as string);
+  return Number.isNaN(parsed) ? fallback : parsed;
+};
+
+/**
+ * Remove opções vazias e ajusta o índice da resposta correta para a lista final
+ * (ex.: A, "", C com resposta C → ["A", "C"] com resposta 1).
+ */
+const buildQuestionOptions = (
+  rawOptions: (string | null)[],
+  selectedIndex: number
+): { options: string[]; correctAnswer: number } | { error: string } => {
+  const trimmed = rawOptions.map((opt) => (opt ?? "").trim());
+  const options = trimmed.filter(Boolean);
+
+  if (options.length < 2) {
+    return { error: "É necessário pelo menos 2 opções" };
   }
-  return [];
+  if (!trimmed[selectedIndex]) {
+    return { error: "A resposta correta precisa ser uma opção preenchida" };
+  }
+
+  return { options, correctAnswer: trimmed.slice(0, selectedIndex).filter(Boolean).length };
 };
 
 export default function CourseContentPage() {
@@ -81,8 +96,8 @@ export default function CourseContentPage() {
         if (courseRes.data.instructor?.id !== user?.id && user?.role !== "ADMIN") {
           navigate("/instructor/courses");
         }
-      } catch (err: any) {
-        setError(err.response?.data?.error || "Erro ao carregar dados");
+      } catch (err) {
+        setError(getErrorMessage(err, "Erro ao carregar dados"));
       } finally {
         setLoading(false);
       }
@@ -97,7 +112,7 @@ export default function CourseContentPage() {
     const formData = new FormData(e.currentTarget);
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
-    const order = parseInt(formData.get("order") as string) || modules.length;
+    const order = parseScore(formData.get("order"), modules.length);
 
     try {
       await api.post("/modules", {
@@ -113,7 +128,7 @@ export default function CourseContentPage() {
       try {
         const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
         setModules(data);
-      } catch (reloadErr: any) {
+      } catch (reloadErr) {
         console.warn("Erro ao recarregar módulos:", reloadErr);
       }
       
@@ -122,10 +137,10 @@ export default function CourseContentPage() {
       } else if (e.currentTarget) {
         e.currentTarget.reset();
       }
-    } catch (err: any) {
-      if (err.response && err.response.status >= 400) {
-        showToast(err.response?.data?.error || "Erro ao criar módulo", "error");
-      } else if (err.request) {
+    } catch (err) {
+      if (getErrorStatus(err) !== undefined) {
+        showToast(getErrorMessage(err, "Erro ao criar módulo"), "error");
+      } else if (isNetworkError(err)) {
         console.error("Erro de rede ao criar módulo:", err);
         showToast("Erro ao criar módulo. Verifique sua conexão.", "error");
       } else {
@@ -142,7 +157,7 @@ export default function CourseContentPage() {
     const formData = new FormData(e.currentTarget);
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
-    const order = parseInt(formData.get("order") as string) || editingModule.order || 0;
+    const order = parseScore(formData.get("order"), editingModule.order ?? 0);
 
     try {
       await api.put(`/modules/${editingModule.id}`, {
@@ -158,11 +173,11 @@ export default function CourseContentPage() {
       try {
         const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
         setModules(data);
-      } catch (reloadErr: any) {
+      } catch (reloadErr) {
         console.warn("Erro ao recarregar módulos:", reloadErr);
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao atualizar módulo", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao atualizar módulo"), "error");
     }
   };
 
@@ -200,7 +215,7 @@ export default function CourseContentPage() {
       try {
         const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
         setModules(data);
-      } catch (reloadErr: any) {
+      } catch (reloadErr) {
         console.warn("Erro ao recarregar módulos:", reloadErr);
       }
       
@@ -209,10 +224,10 @@ export default function CourseContentPage() {
       } else if (e.currentTarget) {
         e.currentTarget.reset();
       }
-    } catch (err: any) {
-      if (err.response && err.response.status >= 400) {
-        showToast(err.response?.data?.error || "Erro ao criar aula", "error");
-      } else if (err.request) {
+    } catch (err) {
+      if (getErrorStatus(err) !== undefined) {
+        showToast(getErrorMessage(err, "Erro ao criar aula"), "error");
+      } else if (isNetworkError(err)) {
         console.error("Erro de rede ao criar aula:", err);
         showToast("Erro ao criar aula. Verifique sua conexão.", "error");
       } else {
@@ -250,11 +265,11 @@ export default function CourseContentPage() {
       try {
         const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
         setModules(data);
-      } catch (reloadErr: any) {
+      } catch (reloadErr) {
         console.warn("Erro ao recarregar módulos:", reloadErr);
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao atualizar aula", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao atualizar aula"), "error");
     }
   };
 
@@ -271,8 +286,8 @@ export default function CourseContentPage() {
       await api.delete(`/modules/${moduleId}`);
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar módulo", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar módulo"), "error");
     }
   };
 
@@ -283,8 +298,8 @@ export default function CourseContentPage() {
       await api.delete(`/lessons/${lessonId}`);
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar aula", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar aula"), "error");
     }
   };
 
@@ -295,7 +310,7 @@ export default function CourseContentPage() {
     const formData = new FormData(e.currentTarget);
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
-    const passingScore = parseInt(formData.get("passingScore") as string) || 70;
+    const passingScore = parseScore(formData.get("passingScore"), 70);
 
     try {
       await api.post("/quizzes", {
@@ -305,17 +320,11 @@ export default function CourseContentPage() {
         passingScore,
       });
       const quizRes = await api.get<Quiz>(`/quizzes/module/${selectedQuizModuleId}`);
-      const quizData = {
-        ...quizRes.data,
-        questions: quizRes.data.questions.map((q: any) => ({
-          ...q,
-          options: parseOptions(q.options),
-        })),
-      };
+      const quizData = normalizeQuiz(quizRes.data);
       setEditingQuiz(quizData);
       showToast("Quiz criado com sucesso! Agora adicione questões.", "success");
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao criar quiz", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao criar quiz"), "error");
     }
   };
 
@@ -326,7 +335,7 @@ export default function CourseContentPage() {
     const formData = new FormData(e.currentTarget);
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
-    const passingScore = parseInt(formData.get("passingScore") as string) || 70;
+    const passingScore = parseScore(formData.get("passingScore"), editingQuiz.passingScore ?? 70);
 
     try {
       await api.put(`/quizzes/${editingQuiz.id}`, {
@@ -334,21 +343,12 @@ export default function CourseContentPage() {
         description,
         passingScore,
       });
-      const quizRes = await api.get<Quiz>(`/quizzes/module/${editingQuiz.moduleId}`);
-      const quizData = {
-        ...quizRes.data,
-        questions: quizRes.data.questions.map((q: any) => ({
-          ...q,
-          options: parseOptions(q.options),
-        })),
-      };
-      setEditingQuiz(quizData);
       showToast("Quiz atualizado com sucesso!", "success");
       setShowQuizForm(false);
       setEditingQuiz(null);
       setSelectedQuizModuleId("");
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao atualizar quiz", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao atualizar quiz"), "error");
     }
   };
 
@@ -360,8 +360,8 @@ export default function CourseContentPage() {
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
       showToast("Quiz deletado com sucesso!", "success");
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar quiz", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar quiz"), "error");
     }
   };
 
@@ -375,15 +375,15 @@ export default function CourseContentPage() {
     const option2 = formData.get("option2") as string;
     const option3 = formData.get("option3") as string;
     const option4 = formData.get("option4") as string;
-    const correctAnswer = parseInt(formData.get("correctAnswer") as string);
+    const selectedAnswer = parseInt(formData.get("correctAnswer") as string);
     const order = parseInt(formData.get("order") as string) || 0;
 
-    const options = [option1, option2, option3, option4].filter((opt) => opt.trim());
-
-    if (options.length < 2) {
-      showToast("É necessário pelo menos 2 opções", "error");
+    const parsed = buildQuestionOptions([option1, option2, option3, option4], selectedAnswer);
+    if ("error" in parsed) {
+      showToast(parsed.error, "error");
       return;
     }
+    const { options, correctAnswer } = parsed;
 
     try {
       await api.post("/quizzes/questions", {
@@ -396,13 +396,7 @@ export default function CourseContentPage() {
       showToast("Questão criada com sucesso!", "success");
       if (editingQuiz) {
         const quizRes = await api.get<Quiz>(`/quizzes/module/${editingQuiz.moduleId}`);
-        const quizData = {
-          ...quizRes.data,
-          questions: quizRes.data.questions.map((q: any) => ({
-            ...q,
-            options: parseOptions(q.options),
-          })),
-        };
+        const quizData = normalizeQuiz(quizRes.data);
         setEditingQuiz(quizData);
       }
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
@@ -413,8 +407,8 @@ export default function CourseContentPage() {
       if (questionFormRef.current) {
         questionFormRef.current.reset();
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao criar questão", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao criar questão"), "error");
     }
   };
 
@@ -428,15 +422,15 @@ export default function CourseContentPage() {
     const option2 = formData.get("option2") as string;
     const option3 = formData.get("option3") as string;
     const option4 = formData.get("option4") as string;
-    const correctAnswer = parseInt(formData.get("correctAnswer") as string);
+    const selectedAnswer = parseInt(formData.get("correctAnswer") as string);
     const order = parseInt(formData.get("order") as string) || 0;
 
-    const options = [option1, option2, option3, option4].filter((opt) => opt.trim());
-
-    if (options.length < 2) {
-      showToast("É necessário pelo menos 2 opções", "error");
+    const parsed = buildQuestionOptions([option1, option2, option3, option4], selectedAnswer);
+    if ("error" in parsed) {
+      showToast(parsed.error, "error");
       return;
     }
+    const { options, correctAnswer } = parsed;
 
     try {
       await api.put(`/quizzes/questions/${editingQuestion.id}`, {
@@ -448,13 +442,7 @@ export default function CourseContentPage() {
       showToast("Questão atualizada com sucesso!", "success");
       if (editingQuiz) {
         const quizRes = await api.get<Quiz>(`/quizzes/module/${editingQuiz.moduleId}`);
-        const quizData = {
-          ...quizRes.data,
-          questions: quizRes.data.questions.map((q: any) => ({
-            ...q,
-            options: parseOptions(q.options),
-          })),
-        };
+        const quizData = normalizeQuiz(quizRes.data);
         setEditingQuiz(quizData);
       }
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
@@ -462,8 +450,8 @@ export default function CourseContentPage() {
       setShowQuestionForm(false);
       setEditingQuestion(null);
       setSelectedQuizId("");
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao atualizar questão", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao atualizar questão"), "error");
     }
   };
 
@@ -474,47 +462,35 @@ export default function CourseContentPage() {
       await api.delete(`/quizzes/questions/${questionId}`);
       if (editingQuiz) {
         const quizRes = await api.get<Quiz>(`/quizzes/module/${editingQuiz.moduleId}`);
-        const quizData = {
-          ...quizRes.data,
-          questions: quizRes.data.questions.map((q: any) => ({
-            ...q,
-            options: Array.isArray(q.options) ? q.options : JSON.parse(q.options || "[]"),
-          })),
-        };
+        const quizData = normalizeQuiz(quizRes.data);
         setEditingQuiz(quizData);
       }
       const { data } = await api.get<ModuleWithLessons[]>(`/modules/course/${id}`);
       setModules(data);
       showToast("Questão deletada com sucesso!", "success");
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar questão", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar questão"), "error");
     }
   };
 
   const handleManageQuiz = async (moduleId: string) => {
     try {
       const res = await api.get<Quiz>(`/quizzes/module/${moduleId}`);
-      const quizData = {
-        ...res.data,
-        questions: res.data.questions.map((q: any) => ({
-          ...q,
-          options: parseOptions(q.options),
-        })),
-      };
+      const quizData = normalizeQuiz(res.data);
       setEditingQuiz(quizData);
       setSelectedQuizModuleId(moduleId);
       setShowQuizForm(true);
       setShowQuestionForm(false);
       setEditingQuestion(null);
-      } catch (err: any) {
-        if (err.response?.status === 404) {
+      } catch (err) {
+        if (getErrorStatus(err) === 404) {
           setEditingQuiz(null);
         setSelectedQuizModuleId(moduleId);
         setShowQuizForm(true);
         setShowQuestionForm(false);
         setEditingQuestion(null);
       } else {
-        showToast(err.response?.data?.error || "Erro ao carregar quiz", "error");
+        showToast(getErrorMessage(err, "Erro ao carregar quiz"), "error");
       }
     }
   };
@@ -705,7 +681,7 @@ export default function CourseContentPage() {
                 type="number" 
                 min="0" 
                 max="100" 
-                defaultValue={editingQuiz?.passingScore || 70} 
+                defaultValue={editingQuiz?.passingScore ?? 70}
               />
             </div>
             <div className="form-actions">
@@ -816,7 +792,8 @@ export default function CourseContentPage() {
       {showQuestionForm && (
         <div className="form-card">
           <h3>{editingQuestion ? "Editar Questão" : "Adicionar Questão"}</h3>
-          <form 
+          <form
+            key={editingQuestion?.id ?? "new-question"}
             ref={questionFormRef} 
             onSubmit={editingQuestion ? handleEditQuestion : handleCreateQuestion}
           >

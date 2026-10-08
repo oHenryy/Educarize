@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { api } from "../api/client";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { api, getErrorMessage } from "../api/client";
 import type { Note } from "../types";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 interface LessonNotesProps {
   lessonId: string;
@@ -15,23 +15,23 @@ export default function LessonNotes({ lessonId }: LessonNotesProps) {
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const { showToast } = useToast();
 
-  useEffect(() => {
-    if (lessonId) {
-      fetchNotes();
-    }
-  }, [lessonId]);
-
-  const fetchNotes = async () => {
+  const fetchNotes = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get<Note[]>(`/notes/lesson/${lessonId}`);
       setNotes(res.data);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar anotações:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [lessonId]);
+
+  useEffect(() => {
+    if (lessonId) {
+      fetchNotes();
+    }
+  }, [lessonId, fetchNotes]);
 
   const handleSubmitNote = async (e: FormEvent) => {
     e.preventDefault();
@@ -50,8 +50,8 @@ export default function LessonNotes({ lessonId }: LessonNotesProps) {
       setShowForm(false);
       setEditingNote(null);
       fetchNotes();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao salvar anotação", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao salvar anotação"), "error");
     }
   };
 
@@ -61,8 +61,8 @@ export default function LessonNotes({ lessonId }: LessonNotesProps) {
     try {
       await api.delete(`/notes/${noteId}`);
       fetchNotes();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar anotação", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar anotação"), "error");
     }
   };
 

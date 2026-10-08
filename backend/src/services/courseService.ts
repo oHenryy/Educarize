@@ -1,11 +1,14 @@
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
+import { HttpError } from "../utils/httpError";
+import { AuthUser, isOwnerOrAdmin, isEnrolled } from "../utils/courseAccess";
 
 export interface CourseFilters {
   categoryId?: string;
   difficulty?: string;
   status?: string;
   search?: string;
+  instructorId?: string;
 }
 
 export interface CreateCourseData {
@@ -29,12 +32,21 @@ export interface UpdateCourseData {
 }
 
 export class CourseService {
-  async listCourses(filters: CourseFilters) {
+  async listCourses(filters: CourseFilters, user: AuthUser) {
     const where: any = {};
 
     if (filters.categoryId) where.categoryId = filters.categoryId;
     if (filters.difficulty) where.difficulty = filters.difficulty;
-    if (filters.status) where.status = filters.status;
+    if (filters.instructorId) where.instructorId = filters.instructorId;
+
+    // Cursos não publicados só são visíveis para administradores ou para o próprio instrutor.
+    const canSeeUnpublished =
+      user.role === "ADMIN" || (!!filters.instructorId && filters.instructorId === user.userId);
+    if (canSeeUnpublished) {
+      if (filters.status) where.status = filters.status;
+    } else {
+      where.status = "PUBLISHED";
+    }
     if (filters.search) {
       where.OR = [
         { title: { contains: filters.search } },
@@ -74,7 +86,7 @@ export class CourseService {
     });
   }
 
-  async getCourseById(id: string) {
+  async getCourseById(id: string, user: AuthUser) {
     const course = await prisma.course.findUnique({
       where: { id },
       include: {
@@ -123,10 +135,32 @@ export class CourseService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
-    return course;
+    if (isOwnerOrAdmin(course.instructorId, user)) {
+      return course;
+    }
+
+    const enrolled = await isEnrolled(user.userId, id);
+
+    // Rascunhos/suspensos/arquivados não são visíveis para quem não está matriculado.
+    if (course.status !== "PUBLISHED" && !enrolled) {
+      throw new HttpError(404, "Curso não encontrado");
+    }
+
+    if (enrolled) {
+      return course;
+    }
+
+    // Quem não está matriculado vê apenas a ementa, sem o link dos vídeos.
+    return {
+      ...course,
+      modules: course.modules.map((mod) => ({
+        ...mod,
+        lessons: mod.lessons.map((lesson) => ({ ...lesson, videoUrl: null })),
+      })),
+    };
   }
 
   async createCourse(data: CreateCourseData) {
@@ -233,11 +267,15 @@ export class CourseService {
     let finalStatus: string | undefined = undefined;
     if (data.status) {
       const validStatuses = ["DRAFT", "PUBLISHED", "ARCHIVED", "SUSPENDED"];
-      if (validStatuses.includes(data.status)) {
-        finalStatus = data.status;
-      } else {
+      if (!validStatuses.includes(data.status)) {
         throw new Error("Status inválido. Use: DRAFT, PUBLISHED, ARCHIVED ou SUSPENDED");
       }
+      // Suspensão é uma ação administrativa: instrutor não pode suspender nem reativar curso suspenso.
+      if (userRole !== "ADMIN" && data.status !== course.status &&
+          (data.status === "SUSPENDED" || course.status === "SUSPENDED")) {
+        throw new Error("Sem permissão: apenas administradores podem suspender ou reativar cursos suspensos");
+      }
+      finalStatus = data.status;
     }
 
     try {
@@ -262,6 +300,14 @@ export class CourseService {
           },
           category: true,
         },
+      });
+
+      await logActivity({
+        action: "COURSE_UPDATED",
+        description: `Curso "${updated.title}" atualizado`,
+        resourceId: updated.id,
+        resourceType: "COURSE",
+        userId,
       });
 
       return updated;

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { useCallback, useEffect, useState } from "react";
+import { api, getErrorMessage } from "../api/client";
 import type { LessonAttachment } from "../types";
 
 interface LessonAttachmentsProps {
@@ -45,27 +45,27 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
     thumbnailUrl: "",
   });
 
-  useEffect(() => {
-    fetchAttachments();
-  }, [lessonId, filterCategory]);
-
-  const fetchAttachments = async () => {
+  const fetchAttachments = useCallback(async () => {
     try {
       setLoading(true);
       const params = filterCategory ? { category: filterCategory } : {};
       const res = await api.get(`/lessons/${lessonId}/attachments`, { params });
       setAttachments(res.data);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao carregar materiais");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao carregar materiais"));
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterCategory, lessonId]);
+
+  useEffect(() => {
+    fetchAttachments();
+  }, [lessonId, filterCategory, fetchAttachments]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const data: any = {
+      const data: Record<string, unknown> = {
         name: formData.name,
         description: formData.description || undefined,
         fileUrl: formData.fileUrl,
@@ -91,8 +91,8 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
       setEditingId(null);
       resetForm();
       fetchAttachments();
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao salvar material");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao salvar material"));
     }
   };
 
@@ -117,19 +117,29 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
     try {
       await api.delete(`/lessons/attachments/${id}`);
       fetchAttachments();
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao excluir material");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao excluir material"));
+    }
+  };
+
+  const openSafely = (url: string) => {
+    // Só abre links http(s): bloqueia javascript:, data: e similares.
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error();
+      window.open(parsed.href, "_blank", "noopener,noreferrer");
+    } catch {
+      setError("Link do material inválido");
     }
   };
 
   const handleDownload = async (attachment: LessonAttachment) => {
     try {
       await api.post(`/lessons/attachments/${attachment.id}/download`);
-      window.open(attachment.fileUrl, "_blank");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao registrar download:", err);
-      window.open(attachment.fileUrl, "_blank");
     }
+    openSafely(attachment.fileUrl);
   };
 
   const resetForm = () => {

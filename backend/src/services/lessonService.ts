@@ -1,8 +1,24 @@
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
+import { HttpError } from "../utils/httpError";
+import { isSafeUrl } from "../utils";
+import {
+  AuthUser,
+  assertCourseContentAccess,
+  getCourseIdByLesson,
+  getCourseIdByModule,
+} from "../utils/courseAccess";
+
+function assertSafeUrl(url: string | null | undefined, field: string): void {
+  if (url && !isSafeUrl(url)) {
+    throw new HttpError(400, `${field} inválido: use um endereço http:// ou https://`);
+  }
+}
 
 export class LessonService {
-  async listByModule(moduleId: string) {
+  async listByModule(moduleId: string, user: AuthUser) {
+    await assertCourseContentAccess(await getCourseIdByModule(moduleId), user);
+
     return await prisma.lesson.findMany({
       where: { moduleId },
       include: {
@@ -13,7 +29,9 @@ export class LessonService {
     });
   }
 
-  async getById(id: string) {
+  async getById(id: string, user: AuthUser) {
+    await assertCourseContentAccess(await getCourseIdByLesson(id), user);
+
     const lesson = await prisma.lesson.findUnique({
       where: { id },
       include: {
@@ -88,13 +106,15 @@ export class LessonService {
       throw new Error("Sem permissão para criar aula neste módulo");
     }
 
+    assertSafeUrl(data.videoUrl, "Link do vídeo");
+
     const lesson = await prisma.lesson.create({
       data: {
         title: data.title,
         description: data.description,
-        videoUrl: data.videoUrl,
+        videoUrl: data.videoUrl || null,
         durationMinutes: data.durationMinutes || 0,
-        order: data.order || 0,
+        order: data.order ?? 0,
         moduleId: data.moduleId,
       },
       include: {
@@ -103,6 +123,16 @@ export class LessonService {
         },
       },
     });
+
+    await logActivity({
+      action: "LESSON_CREATED",
+      description: `Aula "${lesson.title}" criada no módulo "${lesson.module.title}"`,
+      resourceId: lesson.id,
+      resourceType: "LESSON",
+      userId,
+    });
+
+    return lesson;
   }
 
   async update(
@@ -133,6 +163,8 @@ export class LessonService {
     if (lesson.module.course.instructorId !== userId && userRole !== "ADMIN") {
       throw new Error("Sem permissão para editar esta aula");
     }
+
+    assertSafeUrl(data.videoUrl, "Link do vídeo");
 
     const updated = await prisma.lesson.update({
       where: { id },
@@ -218,6 +250,9 @@ export class LessonService {
       throw new Error("Sem permissão para adicionar anexo nesta aula");
     }
 
+    assertSafeUrl(data.fileUrl, "Link do arquivo");
+    assertSafeUrl(data.thumbnailUrl, "Link da miniatura");
+
     const maxOrder = await prisma.lessonAttachment.findFirst({
       where: { lessonId },
       orderBy: { order: "desc" },
@@ -275,6 +310,9 @@ export class LessonService {
       throw new Error("Sem permissão para editar este anexo");
     }
 
+    assertSafeUrl(data.fileUrl, "Link do arquivo");
+    assertSafeUrl(data.thumbnailUrl, "Link da miniatura");
+
     return await prisma.lessonAttachment.update({
       where: { id: attachmentId },
       data: {
@@ -290,7 +328,16 @@ export class LessonService {
     });
   }
 
-  async incrementAttachmentDownload(attachmentId: string) {
+  async incrementAttachmentDownload(attachmentId: string, user: AuthUser) {
+    const attachment = await prisma.lessonAttachment.findUnique({
+      where: { id: attachmentId },
+      select: { lessonId: true },
+    });
+    if (!attachment) {
+      throw new HttpError(404, "Anexo não encontrado");
+    }
+    await assertCourseContentAccess(await getCourseIdByLesson(attachment.lessonId), user);
+
     await prisma.lessonAttachment.update({
       where: { id: attachmentId },
       data: {
@@ -301,7 +348,9 @@ export class LessonService {
     });
   }
 
-  async getAttachmentsByLesson(lessonId: string, category?: string) {
+  async getAttachmentsByLesson(lessonId: string, user: AuthUser, category?: string) {
+    await assertCourseContentAccess(await getCourseIdByLesson(lessonId), user);
+
     const where: any = { lessonId };
     if (category) {
       where.category = category;

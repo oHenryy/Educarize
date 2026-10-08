@@ -1,8 +1,11 @@
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
+import { AuthUser, assertCourseContentAccess } from "../utils/courseAccess";
 
 export class ModuleService {
-  async listByCourse(courseId: string) {
+  async listByCourse(courseId: string, user: AuthUser) {
+    await assertCourseContentAccess(courseId, user);
+
     return await prisma.module.findMany({
       where: { courseId },
       include: {
@@ -34,7 +37,7 @@ export class ModuleService {
       data: {
         title: data.title,
         description: data.description,
-        order: data.order || 0,
+        order: data.order ?? 0,
         courseId: data.courseId,
       },
       include: {

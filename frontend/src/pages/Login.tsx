@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { User } from "../types";
 
 export default function LoginPage() {
@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const from = (location.state as any)?.from?.pathname || "/catalog";
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/catalog";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -26,8 +26,8 @@ export default function LoginPage() {
       );
       login({ token: data.token, user: data.user });
       navigate(from, { replace: true });
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Falha ao fazer login");
+    } catch (err) {
+      setError(getErrorMessage(err, "Falha ao fazer login"));
     } finally {
       setLoading(false);
     }

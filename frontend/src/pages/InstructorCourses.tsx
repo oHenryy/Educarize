@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { Course } from "../types";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
@@ -25,13 +25,13 @@ export default function InstructorCoursesPage() {
 
     async function fetchCourses() {
       try {
-        const { data } = await api.get<Course[]>("/courses");
-        const myCourses = user?.role === "ADMIN" 
-          ? data 
-          : data.filter(c => c.instructor?.id === user?.id);
-        setCourses(myCourses);
-      } catch (err: any) {
-        setError(err.response?.data?.error || "Erro ao carregar cursos");
+        // Admin vê todos os cursos; instrutor vê apenas os seus (inclusive rascunhos).
+        const { data } = await api.get<Course[]>("/courses", {
+          params: user?.role === "ADMIN" ? {} : { instructorId: user?.id },
+        });
+        setCourses(data);
+      } catch (err) {
+        setError(getErrorMessage(err, "Erro ao carregar cursos"));
       } finally {
         setLoading(false);
       }

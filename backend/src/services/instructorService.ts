@@ -217,12 +217,18 @@ export class InstructorService {
         };
       }
 
-      const completedStudents = course.enrollments.filter((enrollment) => {
-        const completedLessons = enrollment.user.progress.filter(
-          (p) => course.modules.some((mod) => mod.lessons.some((l) => l.id === p.lessonId))
-        ).length;
-        return completedLessons === totalLessons;
-      }).length;
+      const courseLessonIds = new Set(course.modules.flatMap((mod) => mod.lessons.map((l) => l.id)));
+
+      // Curso sem aulas não tem como ser concluído.
+      const completedStudents =
+        totalLessons === 0
+          ? 0
+          : course.enrollments.filter((enrollment) => {
+              const completedLessons = enrollment.user.progress.filter((p) =>
+                courseLessonIds.has(p.lessonId)
+              ).length;
+              return completedLessons >= totalLessons;
+            }).length;
 
       return {
         courseId: course.id,
@@ -275,78 +281,50 @@ export class InstructorService {
   }
 
   private async getTopStudents(instructorId: string) {
-    const enrollments = await prisma.enrollment.findMany({
-      where: { course: { instructorId } },
-      include: {
-        user: {
-          include: {
-            progress: {
-              where: { completed: true },
-            },
-            certificates: {
-              where: { course: { instructorId } },
-            },
-            quizAttempts: {
-              where: {
-                quiz: {
-                  module: {
-                    course: { instructorId },
-                  },
-                },
-              },
-            },
+    const ofInstructor = { module: { course: { instructorId } } };
+
+    // Dados por aluno, já restritos aos cursos deste instrutor (sem contagem duplicada por matrícula).
+    const students = await prisma.user.findMany({
+      where: { enrollments: { some: { course: { instructorId } } } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        _count: {
+          select: {
+            enrollments: { where: { course: { instructorId } } },
+            progress: { where: { completed: true, lesson: ofInstructor } },
+            certificates: { where: { course: { instructorId } } },
           },
         },
-        course: {
-          include: {
-            modules: {
-              include: {
-                lessons: true,
-              },
-            },
-          },
+        quizAttempts: {
+          where: { quiz: ofInstructor },
+          select: { quizId: true, score: true, passed: true },
         },
       },
     });
 
-    const studentStats = enrollments.reduce((acc, enrollment) => {
-      const userId = enrollment.user.id;
-      if (!acc[userId]) {
-        acc[userId] = {
-          userId,
-          userName: enrollment.user.name,
-          userEmail: enrollment.user.email,
-          coursesEnrolled: 0,
-          lessonsCompleted: 0,
-          certificatesEarned: 0,
-          quizzesPassed: 0,
-          averageQuizScore: 0,
+    return students
+      .map((student) => {
+        const attempts = student.quizAttempts;
+        const passedQuizIds = new Set(attempts.filter((a) => a.passed).map((a) => a.quizId));
+        const averageQuizScore =
+          attempts.length > 0
+            ? Math.round(attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length)
+            : 0;
+
+        return {
+          userId: student.id,
+          userName: student.name,
+          userEmail: student.email,
+          coursesEnrolled: student._count.enrollments,
+          lessonsCompleted: student._count.progress,
+          certificatesEarned: student._count.certificates,
+          quizzesPassed: passedQuizIds.size,
+          averageQuizScore,
         };
-      }
-
-      acc[userId].coursesEnrolled++;
-      acc[userId].lessonsCompleted += enrollment.user.progress.length;
-      acc[userId].certificatesEarned += enrollment.user.certificates.length;
-
-      const courseQuizAttempts = enrollment.user.quizAttempts.filter((attempt) =>
-        enrollment.course.modules.some((mod) => mod.quiz?.id === attempt.quizId)
-      );
-      const passedInCourse = courseQuizAttempts.filter((a) => a.passed).length;
-      acc[userId].quizzesPassed += passedInCourse;
-
-      if (courseQuizAttempts.length > 0) {
-        const totalScore = courseQuizAttempts.reduce((sum, a) => sum + a.score, 0);
-        const previousAttempts = acc[userId].quizzesPassed - passedInCourse;
-        const previousTotalScore = acc[userId].averageQuizScore * previousAttempts;
-        const newTotalScore = previousTotalScore + totalScore;
-        const newTotalAttempts = previousAttempts + courseQuizAttempts.length;
-        acc[userId].averageQuizScore = newTotalAttempts > 0 ? Math.round(newTotalScore / newTotalAttempts) : 0;
-      }
-      return acc;
-    }, {} as Record<string, any>);
-
-    return Object.values(studentStats)
-      .sort((a: any, b: any) => b.lessonsCompleted - a.lessonsCompleted)
+      })
+      .sort((a, b) => b.lessonsCompleted - a.lessonsCompleted)
       .slice(0, 10);
   }
 
@@ -379,9 +357,11 @@ export class InstructorService {
       };
     });
 
+    // Média geral ponderada por avaliação, ignorando cursos sem nenhuma avaliação.
+    const allReviews = courses.flatMap((course) => course.reviews);
     const overallAverage =
-      courseRatings.length > 0
-        ? courseRatings.reduce((sum, r) => sum + r.averageRating, 0) / courseRatings.length
+      allReviews.length > 0
+        ? allReviews.reduce((sum, review) => sum + review.rating, 0) / allReviews.length
         : 0;
 
     return {

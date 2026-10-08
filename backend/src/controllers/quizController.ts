@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { QuizService } from "../services/quizService";
+import { HttpError, sendError } from "../utils/httpError";
 
 const quizService = new QuizService();
 
@@ -7,10 +8,12 @@ export class QuizController {
   async getByModule(req: Request, res: Response): Promise<void> {
     try {
       const { moduleId } = req.params;
-      const quiz = await quizService.getByModule(moduleId);
+      const quiz = await quizService.getByModule(moduleId, req.user!);
       res.json(quiz);
     } catch (error: any) {
-      if (error.message === "Quiz não encontrado") {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Quiz não encontrado") {
         res.status(404).json({ error: error.message });
       } else {
         res.status(500).json({ error: error.message });
@@ -34,7 +37,9 @@ export class QuizController {
       );
       res.status(201).json(quiz);
     } catch (error: any) {
-      if (error.message === "Módulo não encontrado" || error.message === "Já existe um quiz para este módulo") {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Módulo não encontrado" || error.message === "Já existe um quiz para este módulo") {
         res.status(400).json({ error: error.message });
       } else if (error.message.includes("Sem permissão")) {
         res.status(403).json({ error: error.message });
@@ -57,7 +62,9 @@ export class QuizController {
       );
       res.json(updated);
     } catch (error: any) {
-      if (error.message === "Quiz não encontrado") {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Quiz não encontrado") {
         res.status(404).json({ error: error.message });
       } else if (error.message.includes("Sem permissão")) {
         res.status(403).json({ error: error.message });
@@ -169,11 +176,14 @@ export class QuizController {
       const attempt = await quizService.submitAttempt(
         quizId,
         req.user!.userId,
-        answers
+        answers,
+        req.user!
       );
       res.json(attempt);
     } catch (error: any) {
-      if (error.message === "Quiz não encontrado") {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Quiz não encontrado") {
         res.status(404).json({ error: error.message });
       } else {
         res.status(500).json({ error: error.message });

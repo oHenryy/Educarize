@@ -68,6 +68,7 @@ Plataforma LMS modular com foco em simplicidade para alunos, instrutores e admin
 5. **Módulo Administrativo**
    - Dashboard completo com métricas gerais
    - Gestão de usuários (listar, editar papel, resetar senha, deletar)
+   - Transferência de cursos e trilhas entre instrutores (necessária antes de excluir ou rebaixar um autor)
    - Gestão de categorias de cursos
    - Log de atividades (auditoria completa de ações no sistema)
    - Visualização de estatísticas detalhadas
@@ -171,11 +172,14 @@ Educarize/
    - Copie `.env.example` para `.env`
    - Edite o arquivo `.env` e configure:
      ```
-     DATABASE_URL=file:./prisma/dev.db
+     DATABASE_URL=file:./dev.db
      JWT_SECRET=uma-chave-bem-segura
      PORT=4000
      FRONTEND_URL=http://localhost:5173
      ```
+   - O caminho do SQLite é relativo ao `prisma/schema.prisma` (o banco fica em `backend/prisma/dev.db`).
+   - `JWT_SECRET` é **obrigatório** com `NODE_ENV=production`; em desenvolvimento, se ausente, é usada uma chave
+     de teste e um aviso é exibido no console.
 
 4. Execute as migrações do banco de dados:
    ```bash
@@ -211,14 +215,10 @@ Educarize/
    ```
 
 3. Configure as variáveis de ambiente:
-   - Crie um arquivo `.env` na raiz do diretório `frontend`
-   - Adicione:
+   - Copie `.env.example` para `.env` na raiz do diretório `frontend`
+   - Configure a URL da API:
      ```
      VITE_API_URL=http://localhost:4000
-     ```
-     Ou alternativamente:
-     ```
-     VITE_BACKEND_URL=http://localhost:4000
      ```
 
 4. Inicie o servidor de desenvolvimento:
@@ -261,12 +261,34 @@ Acesse `http://localhost:4000/docs` para ver a documentação Swagger completa d
 - **Busca**: Busca avançada com múltiplos filtros e sugestões
 - **Trilhas**: Organize cursos em sequências de aprendizado estruturadas
 
+### Regras de Acesso
+
+- **Cadastro**: o próprio usuário pode se registrar como `STUDENT` ou `INSTRUCTOR`. O papel `ADMIN` só é
+  concedido por outro administrador (ou pelo script `npm run create-admin`).
+- **Papel sempre atualizado**: o papel é lido do banco a cada requisição; alterações feitas por um admin (ou a
+  exclusão do usuário) valem imediatamente, sem esperar o token expirar.
+- **Conteúdo do curso** (vídeos, anexos, quizzes, comentários, anotações, progresso): disponível para o
+  instrutor dono do curso, administradores e usuários matriculados. Quem não está matriculado vê apenas a ementa.
+  Instrutores e administradores também podem se matricular em cursos de outros instrutores.
+- **Rascunhos**: cursos e trilhas não publicados só aparecem para o autor e para administradores.
+- **Quizzes**: o gabarito é enviado apenas ao dono do curso e a administradores.
+- **Certificados**: exigem matrícula e 100% das aulas concluídas; o download (`GET /certificates/:id/download`)
+  exige autenticação e só é permitido ao dono do certificado.
+- **Avaliações**: apenas alunos matriculados podem avaliar um curso (o instrutor não avalia o próprio curso).
+- **Trilhas**: podem combinar cursos publicados de qualquer instrutor. Ao se matricular em uma trilha, o aluno é
+  matriculado automaticamente nos cursos obrigatórios publicados; o progresso considera os cursos obrigatórios.
+- **Exclusão de usuários**: autores de cursos ou trilhas precisam ter o conteúdo transferido
+  (`POST /admin/users/:id/transfer-content`) antes de serem excluídos ou rebaixados para `STUDENT`.
+- **Comentários**: excluir um comentário remove também as respostas dele.
+- **Links**: URLs de vídeo e de anexos precisam ser `http://` ou `https://`.
+- **Login/cadastro**: limitados a 20 tentativas a cada 15 minutos por IP.
+
 ### Status dos Cursos
 
 - **DRAFT**: Rascunho (não visível para alunos)
 - **PUBLISHED**: Publicado (disponível para matrícula)
 - **ARCHIVED**: Arquivado (não aceita novas matrículas)
-- **SUSPENDED**: Suspenso (temporariamente indisponível)
+- **SUSPENDED**: Suspenso (temporariamente indisponível; apenas administradores suspendem ou reativam)
 
 ### Níveis de Dificuldade
 

@@ -1,28 +1,25 @@
 import { Request, Response } from "express";
 import { LessonService } from "../services/lessonService";
+import { HttpError, sendError } from "../utils/httpError";
 
 const lessonService = new LessonService();
 
 export class LessonController {
   async listByModule(req: Request, res: Response): Promise<void> {
     try {
-      const lessons = await lessonService.listByModule(req.params.moduleId);
+      const lessons = await lessonService.listByModule(req.params.moduleId, req.user!);
       res.json(lessons);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      sendError(res, error);
     }
   }
 
   async getById(req: Request, res: Response): Promise<void> {
     try {
-      const lesson = await lessonService.getById(req.params.id);
+      const lesson = await lessonService.getById(req.params.id, req.user!);
       res.json(lesson);
     } catch (error: any) {
-      if (error.message === "Aula não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+      sendError(res, error);
     }
   }
 
@@ -40,7 +37,9 @@ export class LessonController {
       );
       res.status(201).json(lesson);
     } catch (error: any) {
-      if (error.message === "Módulo não encontrado") {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Módulo não encontrado") {
         res.status(404).json({ error: error.message });
       } else if (error.message.includes("Sem permissão")) {
         res.status(403).json({ error: error.message });
@@ -61,7 +60,9 @@ export class LessonController {
       );
       res.json(updated);
     } catch (error: any) {
-      if (error.message === "Aula não encontrada") {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Aula não encontrada") {
         res.status(404).json({ error: error.message });
       } else if (error.message.includes("Sem permissão")) {
         res.status(403).json({ error: error.message });
@@ -101,7 +102,9 @@ export class LessonController {
       );
       res.status(201).json(attachment);
     } catch (error: any) {
-      if (error.message === "Aula não encontrada") {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Aula não encontrada") {
         res.status(404).json({ error: error.message });
       } else if (error.message.includes("Sem permissão")) {
         res.status(403).json({ error: error.message });
@@ -122,7 +125,9 @@ export class LessonController {
       );
       res.json(attachment);
     } catch (error: any) {
-      if (error.message === "Anexo não encontrado") {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Anexo não encontrado") {
         res.status(404).json({ error: error.message });
       } else if (error.message.includes("Sem permissão")) {
         res.status(403).json({ error: error.message });
@@ -137,21 +142,22 @@ export class LessonController {
       const { category } = req.query;
       const attachments = await lessonService.getAttachmentsByLesson(
         req.params.id,
+        req.user!,
         category as string | undefined
       );
       res.json(attachments);
     } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar anexos" });
+      sendError(res, error, 500, "Erro ao buscar anexos");
     }
   }
 
   async downloadAttachment(req: Request, res: Response): Promise<void> {
     try {
       const attachmentId = req.params.attachmentId;
-      await lessonService.incrementAttachmentDownload(attachmentId);
+      await lessonService.incrementAttachmentDownload(attachmentId, req.user!);
       res.json({ message: "Download registrado" });
     } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao registrar download" });
+      sendError(res, error, 500, "Erro ao registrar download");
     }
   }
 

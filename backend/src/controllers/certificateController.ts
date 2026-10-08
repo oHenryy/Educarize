@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { CertificateService } from "../services/certificateService";
-import path from "path";
+import { CertificateService, getCertificateFilePath } from "../services/certificateService";
+import { sendError } from "../utils/httpError";
 import fs from "fs";
 
 const certificateService = new CertificateService();
@@ -12,7 +12,7 @@ export const certificateController = {
       const certificates = await certificateService.getMyCertificates(userId);
       res.json(certificates);
     } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar certificados" });
+      sendError(res, error, 500, "Erro ao buscar certificados");
     }
   },
 
@@ -25,10 +25,10 @@ export const certificateController = {
         return res.status(400).json({ error: "ID do curso é obrigatório" });
       }
 
-      const pdfUrl = await certificateService.generateCertificate(userId, courseId);
-      res.json({ pdfUrl, message: "Certificado gerado com sucesso" });
+      const certificate = await certificateService.generateCertificate(userId, courseId);
+      res.json({ id: certificate.id, pdfUrl: certificate.pdfUrl, message: "Certificado gerado com sucesso" });
     } catch (error: any) {
-      res.status(400).json({ error: error.message || "Erro ao gerar certificado" });
+      sendError(res, error, 400, "Erro ao gerar certificado");
     }
   },
 
@@ -38,34 +38,26 @@ export const certificateController = {
       const { id } = req.params;
 
       const certificate = await certificateService.getCertificateById(id, userId);
-      const fileName = path.basename(certificate.pdfUrl);
-      const filePath = path.join(process.cwd(), "certificates", fileName);
+      const filePath = getCertificateFilePath(certificate.pdfUrl);
 
       if (!fs.existsSync(filePath)) {
         return res.status(404).json({ error: "Arquivo do certificado não encontrado" });
       }
 
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="certificado_${certificate.course.title.replace(/\s+/g, "_")}.pdf"`);
-      res.sendFile(filePath);
-    } catch (error: any) {
-      res.status(404).json({ error: error.message || "Erro ao baixar certificado" });
-    }
-  },
-
-  async serveCertificate(req: Request, res: Response) {
-    try {
-      const { filename } = req.params;
-      const filePath = path.join(process.cwd(), "certificates", filename);
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: "Certificado não encontrado" });
-      }
+      const asciiName = `certificado_${certificate.course.title}`
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-zA-Z0-9_-]+/g, "_");
+      const utf8Name = encodeURIComponent(`certificado_${certificate.course.title.replace(/\s+/g, "_")}.pdf`);
 
       res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${asciiName}.pdf"; filename*=UTF-8''${utf8Name}`
+      );
       res.sendFile(filePath);
     } catch (error: any) {
-      res.status(404).json({ error: "Erro ao servir certificado" });
+      sendError(res, error, 404, "Erro ao baixar certificado");
     }
   },
 
@@ -77,8 +69,7 @@ export const certificateController = {
       await certificateService.deleteCertificate(id, userId);
       res.json({ message: "Certificado deletado com sucesso" });
     } catch (error: any) {
-      res.status(404).json({ error: error.message || "Erro ao deletar certificado" });
+      sendError(res, error, 404, "Erro ao deletar certificado");
     }
   },
 };
-

@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 import type { LearningPath } from "../types";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 export default function InstructorLearningPathsPage() {
   const { user } = useAuth();
@@ -13,27 +13,27 @@ export default function InstructorLearningPathsPage() {
   const [error, setError] = useState<string | null>(null);
   const { showToast } = useToast();
 
-  useEffect(() => {
-    if (user?.role !== "INSTRUCTOR" && user?.role !== "ADMIN") {
-      navigate("/catalog");
-      return;
-    }
-    fetchLearningPaths();
-  }, [user]);
-
-  const fetchLearningPaths = async () => {
+  const fetchLearningPaths = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get<LearningPath[]>("/learning-paths", {
         params: { instructorId: user?.id },
       });
       setLearningPaths(res.data);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao carregar trilhas");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao carregar trilhas"));
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.role !== "INSTRUCTOR" && user?.role !== "ADMIN") {
+      navigate("/catalog");
+      return;
+    }
+    fetchLearningPaths();
+  }, [user, fetchLearningPaths, navigate]);
 
   const handleDelete = async (id: string, title: string) => {
     if (!confirm(`Tem certeza que deseja deletar a trilha "${title}"?`)) return;
@@ -41,8 +41,8 @@ export default function InstructorLearningPathsPage() {
     try {
       await api.delete(`/learning-paths/${id}`);
       fetchLearningPaths();
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao deletar trilha", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao deletar trilha"), "error");
     }
   };
 

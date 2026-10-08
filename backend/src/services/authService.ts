@@ -31,7 +31,11 @@ export interface AuthResult {
 
 export class AuthService {
   async register(data: RegisterData): Promise<AuthResult> {
-    const { name, email, password, role } = data;
+    const { name, email, password } = data;
+
+    // Auto-registro só pode criar alunos ou instrutores; ADMIN é concedido apenas por outro admin.
+    const selfAssignableRoles = ["STUDENT", "INSTRUCTOR"];
+    const role = data.role && selfAssignableRoles.includes(data.role) ? data.role : "STUDENT";
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -45,7 +49,7 @@ export class AuthService {
         name,
         email,
         passwordHash,
-        role: role ?? "STUDENT",
+        role,
       },
     });
 

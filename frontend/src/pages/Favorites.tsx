@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api/client";
+import { api, getErrorMessage } from "../api/client";
 import type { Favorite } from "../types";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 export default function FavoritesPage() {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
@@ -21,8 +21,8 @@ export default function FavoritesPage() {
       setLoading(true);
       const res = await api.get<Favorite[]>("/favorites");
       setFavorites(res.data);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao carregar favoritos");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao carregar favoritos"));
     } finally {
       setLoading(false);
     }
@@ -36,8 +36,8 @@ export default function FavoritesPage() {
     try {
       await api.delete(`/favorites/${courseId}`);
       setFavorites(favorites.filter((f) => f.courseId !== courseId));
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao remover favorito", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao remover favorito"), "error");
     }
   };
 

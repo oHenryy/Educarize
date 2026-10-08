@@ -14,7 +14,6 @@ export class SearchController {
         tags,
         minRating,
         instructorId,
-        hasCertificate,
         page,
         limit,
       } = req.query;
@@ -23,13 +22,13 @@ export class SearchController {
       if (query) filters.query = query as string;
       if (categoryId) filters.categoryId = categoryId as string;
       if (difficulty) filters.difficulty = difficulty as string;
-      if (status) filters.status = status as string;
+      // Filtrar por status diferente de PUBLISHED é exclusivo de administradores.
+      if (status && req.user?.role === "ADMIN") filters.status = status as string;
       if (tags) {
         filters.tags = Array.isArray(tags) ? tags : [tags as string];
       }
       if (minRating) filters.minRating = parseFloat(minRating as string);
       if (instructorId) filters.instructorId = instructorId as string;
-      if (hasCertificate === "true") filters.hasCertificate = true;
 
       const pageNum = parseInt(page as string) || 1;
       const limitNum = parseInt(limit as string) || 20;

@@ -3,26 +3,18 @@ import PDFDocument from "pdfkit";
 import * as fs from "fs";
 import * as path from "path";
 import { logActivity } from "../utils/activityLogger";
+import { HttpError } from "../utils/httpError";
+
+const CERTS_DIR = path.join(process.cwd(), "certificates");
+
+/** Resolve o caminho do PDF a partir da URL salva, sem permitir sair da pasta de certificados. */
+export function getCertificateFilePath(pdfUrl: string): string {
+  return path.join(CERTS_DIR, path.basename(pdfUrl));
+}
 
 export class CertificateService {
-  async generateCertificate(userId: string, courseId: string): Promise<string> {
-    const existing = await prisma.certificate.findUnique({
-      where: {
-        userId_courseId: { userId, courseId },
-      },
-    });
-
-    if (existing) {
-      const fileName = path.basename(existing.pdfUrl);
-      const filePath = path.join(process.cwd(), "certificates", fileName);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-      await prisma.certificate.delete({
-        where: { id: existing.id },
-      });
-    }
-    const [user, course, progress] = await Promise.all([
+  async generateCertificate(userId: string, courseId: string) {
+    const [user, course, enrollment] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
         select: { id: true, name: true, email: true },
@@ -35,46 +27,41 @@ export class CertificateService {
           },
         },
       }),
-      prisma.userProgress.findMany({
-        where: {
-          userId,
-          completed: true,
-        },
-        include: {
-          lesson: {
-            select: {
-              module: {
-                select: {
-                  courseId: true,
-                },
-              },
-            },
-          },
-        },
+      prisma.enrollment.findUnique({
+        where: { userId_courseId: { userId, courseId } },
+        select: { id: true },
       }),
     ]);
 
     if (!user || !course) {
-      throw new Error("Usuário ou curso não encontrado");
+      throw new HttpError(404, "Usuário ou curso não encontrado");
     }
 
-    const courseLessons = await prisma.lesson.findMany({
-      where: {
-        module: {
-          courseId,
-        },
-      },
+    if (!enrollment) {
+      throw new HttpError(403, "Você precisa estar matriculado no curso para obter o certificado");
+    }
+
+    const [totalLessons, completedLessons] = await Promise.all([
+      prisma.lesson.count({ where: { module: { courseId } } }),
+      prisma.userProgress.count({
+        where: { userId, completed: true, lesson: { module: { courseId } } },
+      }),
+    ]);
+
+    if (totalLessons === 0 || completedLessons < totalLessons) {
+      throw new HttpError(400, "Curso não foi completado (100% de progresso necessário)");
+    }
+
+    const existing = await prisma.certificate.findUnique({
+      where: { userId_courseId: { userId, courseId } },
     });
 
-    const completedLessons = progress.filter(
-      (p) => p.lesson.module.courseId === courseId
-    );
-
-    if (courseLessons.length === 0 || completedLessons.length < courseLessons.length) {
-      throw new Error("Curso não foi completado (100% de progresso necessário)");
+    // Certificado já emitido e com arquivo íntegro: não regera.
+    if (existing && fs.existsSync(getCertificateFilePath(existing.pdfUrl))) {
+      return existing;
     }
 
-    const certsDir = path.join(process.cwd(), "certificates");
+    const certsDir = CERTS_DIR;
     if (!fs.existsSync(certsDir)) {
       fs.mkdirSync(certsDir, { recursive: true });
     }
@@ -176,13 +163,16 @@ export class CertificateService {
 
     const pdfUrl = `/certificates/file/${fileName}`;
 
-    const certificate = await prisma.certificate.create({
-      data: {
-        userId,
-        courseId,
-        pdfUrl,
-      },
-    });
+    // Se existia registro mas o arquivo sumiu, apenas atualiza o registro com o novo PDF.
+    const certificate = existing
+      ? await prisma.certificate.update({ where: { id: existing.id }, data: { pdfUrl } })
+      : await prisma.certificate.create({
+          data: {
+            userId,
+            courseId,
+            pdfUrl,
+          },
+        });
 
     await logActivity({
       action: "CERTIFICATE_GENERATED",
@@ -192,7 +182,7 @@ export class CertificateService {
       userId,
     });
 
-    return pdfUrl;
+    return certificate;
   }
 
   async getMyCertificates(userId: string) {
@@ -244,16 +234,17 @@ export class CertificateService {
     });
 
     if (!certificate) {
-      throw new Error("Certificado não encontrado");
+      throw new HttpError(404, "Certificado não encontrado");
     }
 
     if (certificate.userId !== userId) {
-      throw new Error("Você não tem permissão para acessar este certificado");
+      throw new HttpError(403, "Você não tem permissão para acessar este certificado");
     }
 
     return certificate;
   }
 
+  /** Gera o certificado se o curso acabou de ser concluído. Retorna null se já existia ou se ainda não concluiu. */
   async checkAndGenerateCertificate(userId: string, courseId: string): Promise<string | null> {
     try {
       const existing = await prisma.certificate.findUnique({
@@ -263,47 +254,19 @@ export class CertificateService {
       });
 
       if (existing) {
-        return existing.pdfUrl;
-      }
-
-      const course = await prisma.course.findUnique({
-        where: { id: courseId },
-        include: {
-          modules: {
-            include: {
-              lessons: true,
-            },
-          },
-        },
-      });
-
-      if (!course) {
         return null;
       }
 
-      const totalLessons = course.modules.reduce(
-        (acc, mod) => acc + mod.lessons.length,
-        0
-      );
+      const [totalLessons, completedLessons] = await Promise.all([
+        prisma.lesson.count({ where: { module: { courseId } } }),
+        prisma.userProgress.count({
+          where: { userId, completed: true, lesson: { module: { courseId } } },
+        }),
+      ]);
 
-      if (totalLessons === 0) {
-        return null;
-      }
-
-      const completedLessons = await prisma.userProgress.count({
-        where: {
-          userId,
-          completed: true,
-          lesson: {
-            module: {
-              courseId,
-            },
-          },
-        },
-      });
-
-      if (completedLessons >= totalLessons) {
-        return await this.generateCertificate(userId, courseId);
+      if (totalLessons > 0 && completedLessons >= totalLessons) {
+        const certificate = await this.generateCertificate(userId, courseId);
+        return certificate.pdfUrl;
       }
 
       return null;
@@ -319,15 +282,14 @@ export class CertificateService {
     });
 
     if (!certificate) {
-      throw new Error("Certificado não encontrado");
+      throw new HttpError(404, "Certificado não encontrado");
     }
 
     if (certificate.userId !== userId) {
-      throw new Error("Você não tem permissão para deletar este certificado");
+      throw new HttpError(403, "Você não tem permissão para deletar este certificado");
     }
 
-    const fileName = path.basename(certificate.pdfUrl);
-    const filePath = path.join(process.cwd(), "certificates", fileName);
+    const filePath = getCertificateFilePath(certificate.pdfUrl);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }

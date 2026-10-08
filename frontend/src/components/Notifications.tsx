@@ -23,7 +23,7 @@ export default function Notifications() {
       const res = await api.get("/notifications?limit=10");
       setNotifications(res.data.notifications || []);
       setUnreadCount(res.data.unreadCount || 0);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar notificações:", err);
     } finally {
       setLoading(false);
@@ -34,7 +34,7 @@ export default function Notifications() {
     try {
       const res = await api.get("/notifications/unread-count");
       setUnreadCount(res.data.unreadCount || 0);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar contador de não lidas:", err);
     }
   };
@@ -44,7 +44,7 @@ export default function Notifications() {
       await api.put(`/notifications/${notificationId}/read`);
       setNotifications(notifications.map(n => n.id === notificationId ? { ...n, read: true } : n));
       setUnreadCount(Math.max(0, unreadCount - 1));
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao marcar como lida:", err);
     }
   };
@@ -54,7 +54,7 @@ export default function Notifications() {
       await api.put("/notifications/read-all");
       setNotifications(notifications.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao marcar todas como lidas:", err);
     }
   };

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { ProgressService } from "../services/progressService";
+import { sendError } from "../utils/httpError";
 
 const progressService = new ProgressService();
 
@@ -18,7 +19,7 @@ export class ProgressController {
       );
       res.json(progress);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      sendError(res, error);
     }
   }
 
@@ -36,7 +37,7 @@ export class ProgressController {
       );
       res.json(progress || { message: "Progresso removido" });
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      sendError(res, error);
     }
   }
 

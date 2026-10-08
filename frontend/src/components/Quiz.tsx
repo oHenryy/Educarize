@@ -1,19 +1,8 @@
 import { useState, useEffect } from "react";
-import { api } from "../api/client";
+import { api, getErrorMessage, getErrorStatus } from "../api/client";
 import type { Quiz, QuizAttempt } from "../types";
-import { useToast } from "../context/ToastContext";
-
-const parseOptions = (options: any): string[] => {
-  if (Array.isArray(options)) return options;
-  if (typeof options === 'string') {
-    try {
-      return JSON.parse(options);
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
+import { normalizeQuiz } from "../utils/quiz";
+import { useToast } from "../context/useToast";
 
 interface QuizProps {
   moduleId: string;
@@ -35,21 +24,15 @@ export default function QuizComponent({ moduleId, onComplete }: QuizProps) {
     async function fetchQuiz() {
       try {
         const res = await api.get<Quiz>(`/quizzes/module/${moduleId}`);
-        const quizData = {
-          ...res.data,
-          questions: res.data.questions.map((q: any) => ({
-            ...q,
-            options: parseOptions(q.options),
-          })),
-        };
+        const quizData = normalizeQuiz(res.data);
         setQuiz(quizData);
         const initialAnswers: { [questionId: string]: number } = {};
         quizData.questions.forEach((q) => {
           initialAnswers[q.id] = -1;
         });
         setAnswers(initialAnswers);
-      } catch (err: any) {
-        if (err.response?.status === 404) {
+      } catch (err) {
+        if (getErrorStatus(err) === 404) {
           setError("Nenhum quiz disponível para este módulo");
         } else {
           setError("Erro ao carregar quiz");
@@ -62,10 +45,11 @@ export default function QuizComponent({ moduleId, onComplete }: QuizProps) {
     fetchQuiz();
   }, [moduleId]);
 
-  useEffect(() => {
-    if (!quiz || !quiz.id) return;
+  const quizId = quiz?.id;
 
-    const quizId = quiz.id;
+  useEffect(() => {
+    if (!quizId) return;
+
     async function fetchAttempts() {
       try {
         const res = await api.get<QuizAttempt[]>(`/quizzes/${quizId}/attempts`);
@@ -76,7 +60,7 @@ export default function QuizComponent({ moduleId, onComplete }: QuizProps) {
     }
 
     fetchAttempts();
-  }, [quiz?.id]);
+  }, [quizId]);
 
   const handleAnswerChange = (questionId: string, answerIndex: number) => {
     if (!quiz) return;
@@ -107,8 +91,8 @@ export default function QuizComponent({ moduleId, onComplete }: QuizProps) {
       if (onComplete) {
         onComplete(res.data);
       }
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao enviar quiz", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao enviar quiz"), "error");
     }
   };
 

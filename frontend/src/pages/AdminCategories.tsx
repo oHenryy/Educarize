@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api } from "../api/client";
+import { api, getErrorMessage, getErrorStatus } from "../api/client";
 import type { CourseCategory } from "../types";
-import { useToast } from "../context/ToastContext";
+import { useToast } from "../context/useToast";
 
 export default function AdminCategoriesPage() {
   const [categories, setCategories] = useState<CourseCategory[]>([]);
@@ -17,13 +17,13 @@ export default function AdminCategoriesPage() {
       try {
         const res = await api.get<CourseCategory[]>("/categories");
         setCategories(res.data);
-      } catch (err: any) {
-        if (err.response?.status === 403) {
+      } catch (err) {
+        if (getErrorStatus(err) === 403) {
           setError("Você não tem permissão para acessar esta página");
-        } else if (err.response?.status === 401) {
+        } else if (getErrorStatus(err) === 401) {
           setError("Sua sessão expirou. Por favor, faça login novamente.");
         } else {
-          setError(err.response?.data?.error || "Erro ao carregar categorias");
+          setError(getErrorMessage(err, "Erro ao carregar categorias"));
         }
       } finally {
         setLoading(false);
@@ -51,8 +51,8 @@ export default function AdminCategoriesPage() {
       setShowForm(false);
       const res = await api.get<CourseCategory[]>("/categories");
       setCategories(res.data);
-    } catch (err: any) {
-      showToast(err.response?.data?.error || "Erro ao criar categoria", "error");
+    } catch (err) {
+      showToast(getErrorMessage(err, "Erro ao criar categoria"), "error");
     }
   };
 

@@ -1,44 +1,41 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { api } from "../api/client";
 import type { User } from "../types";
-
-type AuthContextType = {
-  user: User | null;
-  token: string | null;
-  loading: boolean;
-  login: (data: { user: User; token: string }) => void;
-  logout: () => void;
-};
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import { AuthContext } from "./auth-context";
 
 const STORAGE_KEY = "educarize_auth";
 
+type StoredAuth = { user: User; token: string };
+
+function readStoredAuth(): StoredAuth | null {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as StoredAuth;
+    localStorage.setItem("token", parsed.token);
+    return parsed;
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem("token");
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Lido de forma síncrona na inicialização: evita um render extra "deslogado".
+  const [stored] = useState(readStoredAuth);
+  const [user, setUser] = useState<User | null>(stored?.user ?? null);
+  const [token, setToken] = useState<string | null>(stored?.token ?? null);
 
-  useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as { user: User; token: string };
-        setUser(parsed.user);
-        setToken(parsed.token);
-        localStorage.setItem("token", parsed.token);
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem("token");
-      }
-    }
-    setLoading(false);
-  }, []);
-
-  const login = (data: { user: User; token: string }) => {
-    setUser(data.user);
-    setToken(data.token);
+  const persist = (data: StoredAuth) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     localStorage.setItem("token", data.token);
+  };
+
+  const login = (data: StoredAuth) => {
+    setUser(data.user);
+    setToken(data.token);
+    persist(data);
   };
 
   const logout = () => {
@@ -48,17 +45,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("token");
   };
 
+  const updateUser = useCallback(
+    (nextUser: User) => {
+      setUser(nextUser);
+      if (token) persist({ user: nextUser, token });
+    },
+    [token]
+  );
+
+  // O papel pode ter sido alterado por um admin: sincroniza com o servidor ao abrir o app e após o login.
+  useEffect(() => {
+    if (!token) return;
+    api
+      .get<{ user: User }>("/auth/me")
+      .then((res) => updateUser(res.data.user))
+      .catch(() => {
+        // 401 já é tratado pelo interceptor (logout + redirecionamento).
+      });
+  }, [token, updateUser]);
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading: false, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
 }
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
-}
-
-

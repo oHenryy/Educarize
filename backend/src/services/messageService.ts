@@ -78,10 +78,12 @@ export class MessageService {
           },
         },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     });
+    // Busca as mais recentes primeiro e devolve em ordem cronológica para exibição.
+    messages.reverse();
 
     const total = await prisma.message.count({
       where: {

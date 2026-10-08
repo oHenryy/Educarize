@@ -1,12 +1,12 @@
 import { Request, Response } from "express";
 import { NoteService } from "../services/noteService";
+import { sendError } from "../utils/httpError";
 
 const noteService = new NoteService();
 
 export class NoteController {
   async createNote(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user!.userId;
       const { lessonId, content } = req.body;
 
       if (!lessonId || !content) {
@@ -14,10 +14,10 @@ export class NoteController {
         return;
       }
 
-      const note = await noteService.createNote(userId, lessonId, content);
+      const note = await noteService.createNote(req.user!, lessonId, content);
       res.status(201).json(note);
     } catch (error: any) {
-      res.status(400).json({ error: error.message });
+      sendError(res, error, 400);
     }
   }
 

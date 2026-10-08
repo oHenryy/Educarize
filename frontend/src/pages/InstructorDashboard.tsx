@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { api, getErrorMessage } from "../api/client";
 
 interface InstructorDashboardStats {
   totals: {
@@ -92,8 +92,8 @@ export default function InstructorDashboardPage() {
       setLoading(true);
       const res = await api.get<InstructorDashboardStats>("/instructor/dashboard/stats");
       setStats(res.data);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao carregar estatísticas");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao carregar estatísticas"));
     } finally {
       setLoading(false);
     }

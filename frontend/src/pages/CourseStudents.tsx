@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
+import { api, getErrorMessage, getErrorStatus } from "../api/client";
 import type { User } from "../types";
 
 type Enrollment = {
@@ -37,11 +37,11 @@ export default function CourseStudentsPage() {
 
         setEnrollments(studentsRes.data);
         setCourseTitle(courseRes.data.title);
-      } catch (err: any) {
-        if (err.response?.status === 403) {
+      } catch (err) {
+        if (getErrorStatus(err) === 403) {
           setError("Você não tem permissão para ver os alunos deste curso");
         } else {
-          setError(err.response?.data?.error || "Erro ao carregar alunos");
+          setError(getErrorMessage(err, "Erro ao carregar alunos"));
         }
       } finally {
         setLoading(false);

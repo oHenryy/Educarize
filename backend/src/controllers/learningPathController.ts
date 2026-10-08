@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { LearningPathService } from "../services/learningPathService";
+import { HttpError, sendError } from "../utils/httpError";
 
 const learningPathService = new LearningPathService();
 
@@ -12,7 +13,7 @@ export class LearningPathController {
       if (instructorId) filters.instructorId = instructorId as string;
       if (difficulty) filters.difficulty = difficulty as string;
 
-      const learningPaths = await learningPathService.listLearningPaths(filters);
+      const learningPaths = await learningPathService.listLearningPaths(filters, req.user);
       res.json(learningPaths);
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Erro ao listar trilhas" });
@@ -21,7 +22,7 @@ export class LearningPathController {
 
   async getById(req: Request, res: Response): Promise<void> {
     try {
-      const learningPath = await learningPathService.getLearningPathById(req.params.id);
+      const learningPath = await learningPathService.getLearningPathById(req.params.id, req.user);
       res.json(learningPath);
     } catch (error: any) {
       if (error.message === "Trilha de aprendizado não encontrada") {
@@ -114,14 +115,16 @@ export class LearningPathController {
       const pathCourse = await learningPathService.addCourseToPath(
         req.params.id,
         courseId,
-        order,
-        isRequired,
         req.user!.userId,
-        req.user!.role
+        req.user!.role,
+        order,
+        isRequired
       );
       res.status(201).json(pathCourse);
     } catch (error: any) {
-      if (error.message === "Trilha de aprendizado não encontrada" || error.message === "Curso não encontrado") {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Trilha de aprendizado não encontrada" || error.message === "Curso não encontrado") {
         res.status(404).json({ error: error.message });
       } else if (error.message.includes("Sem permissão")) {
         res.status(403).json({ error: error.message });
@@ -133,7 +136,7 @@ export class LearningPathController {
 
   async removeCourse(req: Request, res: Response): Promise<void> {
     try {
-      const { courseId } = req.body;
+      const courseId = req.params.courseId || req.body?.courseId;
       if (!courseId) {
         res.status(400).json({ error: "courseId é obrigatório" });
         return;
@@ -153,6 +156,34 @@ export class LearningPathController {
         res.status(403).json({ error: error.message });
       } else {
         res.status(500).json({ error: error.message || "Erro ao remover curso" });
+      }
+    }
+  }
+
+  async reorderCourses(req: Request, res: Response): Promise<void> {
+    try {
+      const { courseIds } = req.body;
+      if (!Array.isArray(courseIds) || courseIds.some((c) => typeof c !== "string")) {
+        res.status(400).json({ error: "courseIds deve ser uma lista de IDs de curso" });
+        return;
+      }
+
+      const learningPath = await learningPathService.reorderCourses(
+        req.params.id,
+        courseIds,
+        req.user!.userId,
+        req.user!.role
+      );
+      res.json(learningPath);
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        sendError(res, error);
+      } else if (error.message === "Trilha de aprendizado não encontrada") {
+        res.status(404).json({ error: error.message });
+      } else if (error.message.includes("Sem permissão")) {
+        res.status(403).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: error.message || "Erro ao reordenar cursos" });
       }
     }
   }

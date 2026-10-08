@@ -1,8 +1,12 @@
 import { prisma } from "../config/database";
 import { NotificationService } from "./notificationService";
+import { HttpError } from "../utils/httpError";
+import { AuthUser, assertCourseContentAccess, getCourseIdByLesson } from "../utils/courseAccess";
 
 export class CommentService {
-  async listByLesson(lessonId: string) {
+  async listByLesson(lessonId: string, user: AuthUser) {
+    await assertCourseContentAccess(await getCourseIdByLesson(lessonId), user);
+
     const comments = await prisma.lessonComment.findMany({
       where: {
         lessonId,
@@ -41,10 +45,27 @@ export class CommentService {
 
   async create(
     lessonId: string,
-    userId: string,
+    user: AuthUser,
     content: string,
     parentId?: string
   ) {
+    const userId = user.userId;
+    await assertCourseContentAccess(await getCourseIdByLesson(lessonId), user);
+
+    if (parentId) {
+      const parent = await prisma.lessonComment.findUnique({
+        where: { id: parentId },
+        select: { lessonId: true, parentId: true },
+      });
+      if (!parent || parent.lessonId !== lessonId) {
+        throw new HttpError(400, "Comentário pai inválido para esta aula");
+      }
+      // Respostas ficam em um único nível: responder a uma resposta vira resposta ao comentário original.
+      if (parent.parentId) {
+        parentId = parent.parentId;
+      }
+    }
+
     const lesson = await prisma.lesson.findUnique({
       where: { id: lessonId },
       select: {
@@ -182,9 +203,11 @@ export class CommentService {
       throw new Error("Sem permissão para deletar este comentário");
     }
 
-    await prisma.lessonComment.delete({
-      where: { id: commentId },
-    });
+    // Remove as respostas junto, para não virarem comentários "órfãos" no nível principal.
+    await prisma.$transaction([
+      prisma.lessonComment.deleteMany({ where: { parentId: commentId } }),
+      prisma.lessonComment.delete({ where: { id: commentId } }),
+    ]);
 
     return { message: "Comentário deletado com sucesso" };
   }

@@ -1,16 +1,16 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
-import type { Course, CourseCategory, Tag } from "../types";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
+import type { CourseCategory, QueryParams, SearchCourse, SearchSuggestions, Tag } from "../types";
 import StarRating from "../components/StarRating";
 
 export default function AdvancedSearchPage() {
   const { user } = useAuth();
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [courses, setCourses] = useState<SearchCourse[]>([]);
   const [categories, setCategories] = useState<CourseCategory[]>([]);
   const [popularTags, setPopularTags] = useState<Tag[]>([]);
-  const [suggestions, setSuggestions] = useState<{ courses: any[]; tags: any[] }>({ courses: [], tags: [] });
+  const [suggestions, setSuggestions] = useState<SearchSuggestions>({ courses: [], tags: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -31,19 +31,28 @@ export default function AdvancedSearchPage() {
     fetchPopularTags();
   }, []);
 
+  const fetchSuggestions = useCallback(async () => {
+    try {
+      const res = await api.get("/search/suggestions", { params: { query: filters.query } });
+      setSuggestions(res.data);
+    } catch (err) {
+      console.error("Erro ao buscar sugestões:", err);
+    }
+  }, [filters.query]);
+
   useEffect(() => {
     if (filters.query.length >= 2) {
       fetchSuggestions();
     } else {
       setSuggestions({ courses: [], tags: [] });
     }
-  }, [filters.query]);
+  }, [filters.query, fetchSuggestions]);
 
   const fetchCategories = async () => {
     try {
       const res = await api.get<CourseCategory[]>("/categories");
       setCategories(res.data);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar categorias:", err);
     }
   };
@@ -52,17 +61,8 @@ export default function AdvancedSearchPage() {
     try {
       const res = await api.get<Tag[]>("/search/tags/popular?limit=20");
       setPopularTags(res.data);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao carregar tags populares:", err);
-    }
-  };
-
-  const fetchSuggestions = async () => {
-    try {
-      const res = await api.get("/search/suggestions", { params: { query: filters.query } });
-      setSuggestions(res.data);
-    } catch (err: any) {
-      console.error("Erro ao buscar sugestões:", err);
     }
   };
 
@@ -72,7 +72,7 @@ export default function AdvancedSearchPage() {
     try {
       setLoading(true);
       setError(null);
-      const params: any = {
+      const params: QueryParams = {
         page,
         limit: 20,
       };
@@ -85,11 +85,11 @@ export default function AdvancedSearchPage() {
       if (filters.minRating) params.minRating = filters.minRating;
       if (filters.instructorId) params.instructorId = filters.instructorId;
 
-      const res = await api.get("/search/advanced", { params });
+      const res = await api.get<{ courses: SearchCourse[]; pagination?: { totalPages: number } }>("/search/advanced", { params });
       setCourses(res.data.courses || []);
       setTotalPages(res.data.pagination?.totalPages || 1);
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao realizar busca");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao realizar busca"));
     } finally {
       setLoading(false);
     }
@@ -285,7 +285,7 @@ export default function AdvancedSearchPage() {
           </div>
 
           <div className="course-grid">
-            {courses.map((course: any) => (
+            {courses.map((course) => (
               <div key={course.id} className="course-card">
                 <Link to={`/course/${course.id}`} style={{ textDecoration: "none", color: "inherit" }}>
                   {course.coverImageUrl ? (
@@ -314,7 +314,7 @@ export default function AdvancedSearchPage() {
                     </small>
                     {course.tags && course.tags.length > 0 && (
                       <div className="course-tags-preview">
-                        {course.tags.slice(0, 3).map((ct: any) => (
+                        {course.tags.slice(0, 3).map((ct) => (
                           <span key={ct.id} className="tag-badge-small">
                             {ct.tag.name}
                           </span>

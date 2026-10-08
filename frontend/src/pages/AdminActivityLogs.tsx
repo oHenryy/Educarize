@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { api, getErrorMessage, getErrorStatus } from "../api/client";
+import type { QueryParams } from "../types";
 
 interface ActivityLog {
   id: string;
@@ -71,20 +72,20 @@ export default function AdminActivityLogsPage() {
   useEffect(() => {
     async function fetchLogs() {
       try {
-        const params: any = { page, limit: 50 };
+        const params: QueryParams = { page, limit: 50 };
         if (filters.action) params.action = filters.action;
         if (filters.resourceType) params.resourceType = filters.resourceType;
         if (filters.userId) params.userId = filters.userId;
 
         const res = await api.get<ActivityLogsResponse>("/activity-logs", { params });
         setLogs(res.data);
-      } catch (err: any) {
-        if (err.response?.status === 403) {
+      } catch (err) {
+        if (getErrorStatus(err) === 403) {
           setError("Você não tem permissão para acessar esta página");
-        } else if (err.response?.status === 401) {
+        } else if (getErrorStatus(err) === 401) {
           setError("Sua sessão expirou. Por favor, faça login novamente.");
         } else {
-          setError(err.response?.data?.error || "Erro ao carregar logs");
+          setError(getErrorMessage(err, "Erro ao carregar logs"));
         }
       } finally {
         setLoading(false);

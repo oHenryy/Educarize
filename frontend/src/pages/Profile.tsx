@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../context/useAuth";
 
 export default function ProfilePage() {
   const { user } = useAuth();
@@ -36,8 +36,8 @@ export default function ProfilePage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Erro ao alterar senha");
+    } catch (err) {
+      setError(getErrorMessage(err, "Erro ao alterar senha"));
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "../config/database";
+import { logActivity } from "../utils/activityLogger";
 
 export class AdminService {
   async getDashboardStats() {
@@ -95,6 +96,7 @@ export class AdminService {
       }),
       prisma.course.findMany({
         take: 20,
+        orderBy: { enrollments: { _count: "desc" } },
         include: {
           instructor: {
             select: {
@@ -279,6 +281,7 @@ export class AdminService {
           _count: {
             select: {
               coursesCreated: true,
+              learningPathsCreated: true,
               enrollments: true,
             },
           },
@@ -352,7 +355,11 @@ export class AdminService {
     return user;
   }
 
-  async updateUserRole(userId: string, newRole: string) {
+  async updateUserRole(userId: string, newRole: string, requesterId: string) {
+    if (userId === requesterId) {
+      throw new Error("Você não pode alterar o seu próprio papel");
+    }
+
     const validRoles = ["ADMIN", "INSTRUCTOR", "STUDENT"];
     if (!validRoles.includes(newRole)) {
       throw new Error("Papel inválido");
@@ -364,6 +371,16 @@ export class AdminService {
 
     if (!user) {
       throw new Error("Usuário não encontrado");
+    }
+
+    if (user.role !== "STUDENT" && newRole === "STUDENT") {
+      const owned = await this.countOwnedContent(userId);
+      if (owned.courses + owned.learningPaths > 0) {
+        throw new Error(
+          `Este usuário é autor de ${owned.courses} curso(s) e ${owned.learningPaths} trilha(s). ` +
+            "Transfira o conteúdo para outro instrutor antes de alterar o papel para STUDENT."
+        );
+      }
     }
 
     const updated = await prisma.user.update({
@@ -382,6 +399,7 @@ export class AdminService {
       description: `Papel do usuário "${updated.name}" alterado para ${newRole}`,
       resourceId: updated.id,
       resourceType: "USER",
+      userId: requesterId,
     });
 
     return updated;
@@ -412,7 +430,54 @@ export class AdminService {
     });
   }
 
-  async deleteUser(userId: string) {
+  private async countOwnedContent(userId: string) {
+    const [courses, learningPaths] = await Promise.all([
+      prisma.course.count({ where: { instructorId: userId } }),
+      prisma.learningPath.count({ where: { instructorId: userId } }),
+    ]);
+    return { courses, learningPaths };
+  }
+
+  /** Transfere todos os cursos e trilhas de um usuário para outro instrutor/admin. */
+  async transferContent(fromUserId: string, toUserId: string, requesterId: string) {
+    if (fromUserId === toUserId) {
+      throw new Error("Selecione um destinatário diferente do usuário de origem");
+    }
+
+    const [fromUser, toUser] = await Promise.all([
+      prisma.user.findUnique({ where: { id: fromUserId }, select: { id: true, name: true } }),
+      prisma.user.findUnique({ where: { id: toUserId }, select: { id: true, name: true, role: true } }),
+    ]);
+
+    if (!fromUser || !toUser) {
+      throw new Error("Usuário não encontrado");
+    }
+
+    if (toUser.role !== "INSTRUCTOR" && toUser.role !== "ADMIN") {
+      throw new Error("O destinatário precisa ser um instrutor ou administrador");
+    }
+
+    const [courses, learningPaths] = await prisma.$transaction([
+      prisma.course.updateMany({ where: { instructorId: fromUserId }, data: { instructorId: toUserId } }),
+      prisma.learningPath.updateMany({ where: { instructorId: fromUserId }, data: { instructorId: toUserId } }),
+    ]);
+
+    await logActivity({
+      action: "USER_UPDATED",
+      description: `${courses.count} curso(s) e ${learningPaths.count} trilha(s) transferidos de "${fromUser.name}" para "${toUser.name}"`,
+      resourceId: fromUserId,
+      resourceType: "USER",
+      userId: requesterId,
+    });
+
+    return { coursesTransferred: courses.count, learningPathsTransferred: learningPaths.count };
+  }
+
+  async deleteUser(userId: string, requesterId: string) {
+    if (userId === requesterId) {
+      throw new Error("Você não pode excluir a sua própria conta de administrador");
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
@@ -421,10 +486,20 @@ export class AdminService {
       throw new Error("Usuário não encontrado");
     }
 
+    // Cursos não podem ficar sem instrutor e trilhas seriam apagadas em cascata:
+    // o conteúdo precisa ser transferido antes da exclusão.
+    const owned = await this.countOwnedContent(userId);
+    if (owned.courses + owned.learningPaths > 0) {
+      throw new Error(
+        `Este usuário é autor de ${owned.courses} curso(s) e ${owned.learningPaths} trilha(s). ` +
+          "Transfira o conteúdo para outro instrutor antes de excluir o usuário."
+      );
+    }
+
     const userName = user.name;
     const userEmail = user.email;
     await prisma.user.delete({
-      where: { id: userId       },
+      where: { id: userId },
     });
 
     await logActivity({
@@ -432,6 +507,7 @@ export class AdminService {
       description: `Usuário "${userName}" (${userEmail}) deletado`,
       resourceId: userId,
       resourceType: "USER",
+      userId: requesterId,
     });
 
     return { message: "Usuário deletado com sucesso" };

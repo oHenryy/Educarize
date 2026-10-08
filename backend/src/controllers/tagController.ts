@@ -53,10 +53,12 @@ export class TagController {
         return;
       }
 
-      const courseTag = await tagService.addTagToCourse(courseId, tagName);
+      const courseTag = await tagService.addTagToCourse(courseId, tagName, req.user!);
       res.status(201).json(courseTag);
     } catch (error: any) {
-      if (error.message === "Curso não encontrado" || error.message === "Tag já está associada a este curso") {
+      if (error.message.includes("Sem permissão")) {
+        res.status(403).json({ error: error.message });
+      } else if (error.message === "Curso não encontrado" || error.message === "Tag já está associada a este curso") {
         res.status(400).json({ error: error.message });
       } else {
         res.status(500).json({ error: error.message });
@@ -68,10 +70,12 @@ export class TagController {
     try {
       const { courseId, tagId } = req.params;
 
-      const result = await tagService.removeTagFromCourse(courseId, tagId);
+      const result = await tagService.removeTagFromCourse(courseId, tagId, req.user!);
       res.json(result);
     } catch (error: any) {
-      if (error.message === "Tag não está associada a este curso") {
+      if (error.message.includes("Sem permissão")) {
+        res.status(403).json({ error: error.message });
+      } else if (error.message === "Tag não está associada a este curso" || error.message === "Curso não encontrado") {
         res.status(404).json({ error: error.message });
       } else {
         res.status(500).json({ error: error.message });
