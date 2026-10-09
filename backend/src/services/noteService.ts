@@ -1,5 +1,6 @@
 import { prisma } from "../config/database";
 import { AuthUser, assertCourseContentAccess, getCourseIdByLesson } from "../utils/courseAccess";
+import { HttpError } from "../utils/httpError";
 
 export class NoteService {
   async createNote(user: AuthUser, lessonId: string, content: string) {
@@ -41,11 +42,11 @@ export class NoteService {
     });
 
     if (!note) {
-      throw new Error("Anotação não encontrada");
+      throw new HttpError(404, "Anotação não encontrada");
     }
 
     if (note.userId !== userId) {
-      throw new Error("Sem permissão para editar esta anotação");
+      throw new HttpError(403, "Sem permissão para editar esta anotação");
     }
 
     return await prisma.note.update({
@@ -80,11 +81,11 @@ export class NoteService {
     });
 
     if (!note) {
-      throw new Error("Anotação não encontrada");
+      throw new HttpError(404, "Anotação não encontrada");
     }
 
     if (note.userId !== userId) {
-      throw new Error("Sem permissão para deletar esta anotação");
+      throw new HttpError(403, "Sem permissão para deletar esta anotação");
     }
 
     await prisma.note.delete({

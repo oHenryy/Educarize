@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { SearchService } from "../services/searchService";
+import { sendError } from "../utils/httpError";
 
 const searchService = new SearchService();
 
@@ -35,8 +36,8 @@ export class SearchController {
 
       const result = await searchService.advancedSearch(filters, pageNum, limitNum);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao realizar busca" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -54,8 +55,8 @@ export class SearchController {
         courseId as string | undefined
       );
       res.json(lessons);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar aulas" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -71,8 +72,8 @@ export class SearchController {
 
       const notes = await searchService.searchNotes(query as string, userId);
       res.json(notes);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar anotações" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -81,8 +82,8 @@ export class SearchController {
       const limit = parseInt(req.query.limit as string) || 20;
       const tags = await searchService.getPopularTags(limit);
       res.json(tags);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar tags populares" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -97,8 +98,8 @@ export class SearchController {
 
       const suggestions = await searchService.getSearchSuggestions(query as string);
       res.json(suggestions);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar sugestões" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

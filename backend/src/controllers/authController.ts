@@ -1,27 +1,62 @@
 import { Request, Response } from "express";
-import { AuthService, RegisterData, LoginData } from "../services/authService";
+import { AuthService, LoginData, RegisterData } from "../services/authService";
+import { SessionService } from "../services/sessionService";
 import { prisma } from "../config/database";
+import { sendError } from "../utils/httpError";
+import { clearAuthCookies, REFRESH_COOKIE, setAuthCookies } from "../utils/authCookies";
 
 const authService = new AuthService();
+const sessionService = new SessionService();
 
 export class AuthController {
   async register(req: Request, res: Response): Promise<void> {
     try {
-      const { name, email, password, role } = req.body as RegisterData;
+      const { tokens, user } = await authService.register(req.body as RegisterData);
+      setAuthCookies(res, tokens);
+      res.status(201).json({ user });
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
 
-      if (!name || !email || !password) {
-        res.status(400).json({ error: "Nome, email e senha são obrigatórios" });
-        return;
-      }
+  async login(req: Request, res: Response): Promise<void> {
+    try {
+      const { tokens, user } = await authService.login(req.body as LoginData);
+      setAuthCookies(res, tokens);
+      res.json({ user });
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
 
-      const result = await authService.register({ name, email, password, role });
-      res.status(201).json(result);
-    } catch (error: any) {
-      if (error.message === "Email já cadastrado") {
-        res.status(409).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+  /** Renova a sessão a partir do refresh token (cookie), rotacionando-o. */
+  async refresh(req: Request, res: Response): Promise<void> {
+    try {
+      const { tokens, user } = await sessionService.rotate(req.cookies?.[REFRESH_COOKIE]);
+      setAuthCookies(res, tokens);
+      res.json({
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          avatarUrl: user.avatarUrl,
+          emailVerifiedAt: user.emailVerifiedAt,
+        },
+      });
+    } catch (error) {
+      clearAuthCookies(res);
+      sendError(res, error);
+    }
+  }
+
+  async logout(req: Request, res: Response): Promise<void> {
+    try {
+      await sessionService.revoke(req.cookies?.[REFRESH_COOKIE]);
+      clearAuthCookies(res);
+      res.status(204).send();
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -40,65 +75,65 @@ export class AuthController {
         orderBy: { name: "asc" },
       });
       res.json(users);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar usuários" });
-    }
-  }
-
-  async login(req: Request, res: Response): Promise<void> {
-    try {
-      const { email, password } = req.body as LoginData;
-
-      if (!email || !password) {
-        res.status(400).json({ error: "Email e senha são obrigatórios" });
-        return;
-      }
-
-      const result = await authService.login({ email, password });
-      res.json(result);
-    } catch (error: any) {
-      if (error.message === "Credenciais inválidas") {
-        res.status(401).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
   async getMe(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user!.userId;
-      const result = await authService.getCurrentUser(userId);
-      res.json(result);
-    } catch (error: any) {
-      if (error.message === "Usuário não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+      res.json(await authService.getCurrentUser(req.user!.userId));
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
   async changePassword(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user!.userId;
       const { currentPassword, newPassword } = req.body;
+      const tokens = await authService.changePassword(req.user!.userId, currentPassword, newPassword);
+      // As outras sessões foram encerradas; este dispositivo continua logado com uma sessão nova.
+      setAuthCookies(res, tokens);
+      res.json({ message: "Senha alterada com sucesso. As outras sessões foram encerradas." });
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
 
-      if (!currentPassword || !newPassword) {
-        res.status(400).json({ error: "Senha atual e nova senha são obrigatórias" });
-        return;
-      }
+  async forgotPassword(req: Request, res: Response): Promise<void> {
+    try {
+      await authService.requestPasswordReset(req.body.email);
+      res.json({ message: "Se o e-mail estiver cadastrado, você receberá um link para redefinir a senha." });
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
 
-      if (newPassword.length < 6) {
-        res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres" });
-        return;
-      }
+  async resetPassword(req: Request, res: Response): Promise<void> {
+    try {
+      await authService.resetPassword(req.body.token, req.body.newPassword);
+      clearAuthCookies(res);
+      res.json({ message: "Senha redefinida com sucesso. Faça login com a nova senha." });
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
 
-      await authService.changePassword(userId, currentPassword, newPassword);
-      res.json({ message: "Senha alterada com sucesso" });
-    } catch (error: any) {
-      res.status(400).json({ error: error.message || "Erro ao alterar senha" });
+  async verifyEmail(req: Request, res: Response): Promise<void> {
+    try {
+      await authService.verifyEmail(req.body.token);
+      res.json({ message: "E-mail confirmado com sucesso." });
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
+
+  async resendVerification(req: Request, res: Response): Promise<void> {
+    try {
+      await authService.resendVerification(req.user!.userId);
+      res.json({ message: "Enviamos um novo link de confirmação para o seu e-mail." });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }
-

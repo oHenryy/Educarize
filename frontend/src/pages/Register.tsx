@@ -21,11 +21,8 @@ export default function RegisterPage() {
     setError(null);
     setLoading(true);
     try {
-      const { data } = await api.post<{ token: string; user: User }>(
-        "/auth/register",
-        { name, email, password, role }
-      );
-      login({ token: data.token, user: data.user });
+      const { data } = await api.post<{ user: User }>("/auth/register", { name, email, password, role });
+      login(data.user);
       navigate("/catalog", { replace: true });
     } catch (err) {
       setError(getErrorMessage(err, "Falha ao registrar"));

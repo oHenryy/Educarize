@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { QuizService } from "../services/quizService";
-import { HttpError, sendError } from "../utils/httpError";
+import { sendError } from "../utils/httpError";
 
 const quizService = new QuizService();
 
@@ -10,14 +10,8 @@ export class QuizController {
       const { moduleId } = req.params;
       const quiz = await quizService.getByModule(moduleId, req.user!);
       res.json(quiz);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Quiz não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -36,16 +30,8 @@ export class QuizController {
         req.user!.role
       );
       res.status(201).json(quiz);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Módulo não encontrado" || error.message === "Já existe um quiz para este módulo") {
-        res.status(400).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -61,16 +47,8 @@ export class QuizController {
         req.user!.role
       );
       res.json(updated);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Quiz não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -79,14 +57,8 @@ export class QuizController {
       const { id } = req.params;
       await quizService.delete(id, req.user!.userId, req.user!.role);
       res.json({ message: "Quiz deletado com sucesso" });
-    } catch (error: any) {
-      if (error.message === "Quiz não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -110,14 +82,8 @@ export class QuizController {
         req.user!.role
       );
       res.status(201).json(questionData);
-    } catch (error: any) {
-      if (error.message === "Quiz não encontrado" || error.message === "Resposta correta inválida") {
-        res.status(400).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -138,14 +104,8 @@ export class QuizController {
         req.user!.role
       );
       res.json(updated);
-    } catch (error: any) {
-      if (error.message === "Questão não encontrada" || error.message === "Resposta correta inválida") {
-        res.status(400).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -154,14 +114,8 @@ export class QuizController {
       const { id } = req.params;
       await quizService.deleteQuestion(id, req.user!.userId, req.user!.role);
       res.json({ message: "Questão deletada com sucesso" });
-    } catch (error: any) {
-      if (error.message === "Questão não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -180,14 +134,8 @@ export class QuizController {
         req.user!
       );
       res.json(attempt);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Quiz não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -196,8 +144,8 @@ export class QuizController {
       const { quizId } = req.params;
       const attempts = await quizService.getAttempts(quizId, req.user!.userId);
       res.json(attempts);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

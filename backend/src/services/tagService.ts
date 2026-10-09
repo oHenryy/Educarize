@@ -1,5 +1,6 @@
 import { prisma } from "../config/database";
 import { AuthUser, isOwnerOrAdmin } from "../utils/courseAccess";
+import { HttpError } from "../utils/httpError";
 
 export class TagService {
   async createTag(name: string) {
@@ -8,7 +9,7 @@ export class TagService {
     });
 
     if (existing) {
-      throw new Error("Tag já existe");
+      throw new HttpError(409, "Tag já existe");
     }
 
     return await prisma.tag.create({
@@ -51,11 +52,11 @@ export class TagService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     if (!isOwnerOrAdmin(course.instructorId, user)) {
-      throw new Error("Sem permissão para editar as tags deste curso");
+      throw new HttpError(403, "Sem permissão para editar as tags deste curso");
     }
 
     let tag = await prisma.tag.findUnique({
@@ -75,7 +76,7 @@ export class TagService {
     });
 
     if (existing) {
-      throw new Error("Tag já está associada a este curso");
+      throw new HttpError(409, "Tag já está associada a este curso");
     }
 
     return await prisma.courseTag.create({
@@ -96,11 +97,11 @@ export class TagService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     if (!isOwnerOrAdmin(course.instructorId, user)) {
-      throw new Error("Sem permissão para editar as tags deste curso");
+      throw new HttpError(403, "Sem permissão para editar as tags deste curso");
     }
 
     const courseTag = await prisma.courseTag.findUnique({
@@ -110,7 +111,7 @@ export class TagService {
     });
 
     if (!courseTag) {
-      throw new Error("Tag não está associada a este curso");
+      throw new HttpError(400, "Tag não está associada a este curso");
     }
 
     await prisma.courseTag.delete({
@@ -137,7 +138,7 @@ export class TagService {
     });
 
     if (!tag) {
-      throw new Error("Tag não encontrada");
+      throw new HttpError(404, "Tag não encontrada");
     }
 
     const courseTags = await prisma.courseTag.findMany({

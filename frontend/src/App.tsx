@@ -1,5 +1,6 @@
-import { useMemo, type ReactElement, type ReactNode } from "react";
-import { Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { api, getErrorMessage } from "./api/client";
 import "./App.css";
 import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./context/useAuth";
@@ -27,38 +28,37 @@ import InstructorLearningPathsPage from "./pages/InstructorLearningPaths";
 import LearningPathFormPage from "./pages/LearningPathForm";
 import LearningPathCoursesPage from "./pages/LearningPathCourses";
 import MessagesPage from "./pages/Messages";
+import ForgotPasswordPage from "./pages/ForgotPassword";
+import ResetPasswordPage from "./pages/ResetPassword";
+import VerifyEmailPage from "./pages/VerifyEmail";
 import Notifications from "./components/Notifications";
 
 function ProtectedRoute({ children }: { children: ReactElement }) {
-  const { token, loading } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
-  
+
   if (loading) {
     return <div className="loading">Carregando...</div>;
   }
-  
-  if (!token) {
+
+  if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
   return children;
 }
 
 function AdminRoute({ children }: { children: ReactElement }) {
-  const { token, user, loading } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
-  
+
   if (loading) {
     return <div className="loading">Carregando...</div>;
   }
-  
-  if (!token) {
+
+  if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-  
-  if (!user) {
-    return <div className="loading">Carregando usuário...</div>;
-  }
-  
+
   if (user.role !== "ADMIN") {
     return <Navigate to="/catalog" replace />;
   }
@@ -66,9 +66,44 @@ function AdminRoute({ children }: { children: ReactElement }) {
   return children;
 }
 
+/** Aviso para quem ainda não confirmou o e-mail, com opção de reenviar o link. */
+function EmailVerificationNotice() {
+  const [status, setStatus] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+
+  const resend = async () => {
+    setSending(true);
+    try {
+      const { data } = await api.post<{ message: string }>("/auth/resend-verification");
+      setStatus(data.message);
+    } catch (err) {
+      setStatus(getErrorMessage(err, "Não foi possível reenviar o link agora."));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="notice-bar" role="status">
+      <span>{status ?? "Confirme seu e-mail pelo link que enviamos para a sua caixa de entrada."}</span>
+      {!status && (
+        <button type="button" onClick={resend} disabled={sending}>
+          {sending ? "Enviando..." : "Reenviar link"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const isLogged = !!user;
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
   const initials = useMemo(
     () => (user?.name ? user.name.substring(0, 1).toUpperCase() : ""),
     [user]
@@ -147,7 +182,7 @@ function Layout({ children }: { children: ReactNode }) {
                 <strong>{user?.name}</strong>
                 <small>{user?.role}</small>
               </div>
-              <button className="ghost" onClick={logout}>
+              <button className="ghost" onClick={handleLogout}>
                 Sair
               </button>
             </div>
@@ -161,6 +196,7 @@ function Layout({ children }: { children: ReactNode }) {
           )}
         </div>
       </header>
+      {isLogged && !user.emailVerifiedAt && <EmailVerificationNotice />}
       <main className="main">{children}</main>
       </div>
   );
@@ -174,6 +210,9 @@ function App() {
           <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route
             path="/catalog"
             element={

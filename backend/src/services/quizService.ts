@@ -28,7 +28,7 @@ export class QuizService {
     });
 
     if (!quiz) {
-      throw new Error("Quiz não encontrado");
+      throw new HttpError(404, "Quiz não encontrado");
     }
 
     await assertCourseContentAccess(quiz.module.courseId, user);
@@ -65,11 +65,11 @@ export class QuizService {
     });
 
     if (!module) {
-      throw new Error("Módulo não encontrado");
+      throw new HttpError(404, "Módulo não encontrado");
     }
 
     if (module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para criar quiz neste módulo");
+      throw new HttpError(403, "Sem permissão para criar quiz neste módulo");
     }
 
     const existing = await prisma.quiz.findUnique({
@@ -77,7 +77,7 @@ export class QuizService {
     });
 
     if (existing) {
-      throw new Error("Já existe um quiz para este módulo");
+      throw new HttpError(409, "Já existe um quiz para este módulo");
     }
 
     validatePassingScore(data.passingScore);
@@ -127,11 +127,11 @@ export class QuizService {
     });
 
     if (!quiz) {
-      throw new Error("Quiz não encontrado");
+      throw new HttpError(404, "Quiz não encontrado");
     }
 
     if (quiz.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para editar este quiz");
+      throw new HttpError(403, "Sem permissão para editar este quiz");
     }
 
     validatePassingScore(data.passingScore);
@@ -176,11 +176,11 @@ export class QuizService {
     });
 
     if (!quiz) {
-      throw new Error("Quiz não encontrado");
+      throw new HttpError(404, "Quiz não encontrado");
     }
 
     if (quiz.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para deletar este quiz");
+      throw new HttpError(403, "Sem permissão para deletar este quiz");
     }
 
     await prisma.quiz.delete({
@@ -217,11 +217,11 @@ export class QuizService {
     });
 
     if (!quiz) {
-      throw new Error("Quiz não encontrado");
+      throw new HttpError(404, "Quiz não encontrado");
     }
 
     if (quiz.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para adicionar questões neste quiz");
+      throw new HttpError(403, "Sem permissão para adicionar questões neste quiz");
     }
 
     if (
@@ -229,7 +229,7 @@ export class QuizService {
       data.correctAnswer < 0 ||
       data.correctAnswer >= data.options.length
     ) {
-      throw new Error("Resposta correta inválida");
+      throw new HttpError(400, "Resposta correta inválida");
     }
 
     const question = await prisma.quizQuestion.create({
@@ -279,11 +279,11 @@ export class QuizService {
     });
 
     if (!question) {
-      throw new Error("Questão não encontrada");
+      throw new HttpError(404, "Questão não encontrada");
     }
 
     if (question.quiz.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para editar esta questão");
+      throw new HttpError(403, "Sem permissão para editar esta questão");
     }
 
     // Valida a combinação final (opções novas ou existentes x resposta nova ou existente).
@@ -291,10 +291,10 @@ export class QuizService {
       const finalOptions: string[] = data.options ?? JSON.parse(question.options);
       const finalAnswer = data.correctAnswer ?? question.correctAnswer;
       if (finalOptions.length < 2) {
-        throw new Error("Resposta correta inválida");
+        throw new HttpError(400, "Resposta correta inválida");
       }
       if (!Number.isInteger(finalAnswer) || finalAnswer < 0 || finalAnswer >= finalOptions.length) {
-        throw new Error("Resposta correta inválida");
+        throw new HttpError(400, "Resposta correta inválida");
       }
     }
 
@@ -335,11 +335,11 @@ export class QuizService {
     });
 
     if (!question) {
-      throw new Error("Questão não encontrada");
+      throw new HttpError(404, "Questão não encontrada");
     }
 
     if (question.quiz.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para deletar esta questão");
+      throw new HttpError(403, "Sem permissão para deletar esta questão");
     }
 
     await prisma.quizQuestion.delete({
@@ -371,7 +371,7 @@ export class QuizService {
     });
 
     if (!quiz) {
-      throw new Error("Quiz não encontrado");
+      throw new HttpError(404, "Quiz não encontrado");
     }
 
     const questionsWithParsedOptions = quiz.questions.map((q) => ({

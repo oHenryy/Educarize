@@ -9,7 +9,7 @@ export class ModuleController {
     try {
       const modules = await moduleService.listByCourse(req.params.courseId, req.user!);
       res.json(modules);
-    } catch (error: any) {
+    } catch (error) {
       sendError(res, error);
     }
   }
@@ -27,14 +27,8 @@ export class ModuleController {
         req.user!.role
       );
       res.status(201).json(module);
-    } catch (error: any) {
-      if (error.message === "Curso não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -48,14 +42,8 @@ export class ModuleController {
         req.user!.role
       );
       res.json(updated);
-    } catch (error: any) {
-      if (error.message === "Módulo não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -63,14 +51,8 @@ export class ModuleController {
     try {
       await moduleService.delete(req.params.id, req.user!.userId, req.user!.role);
       res.json({ message: "Módulo deletado com sucesso" });
-    } catch (error: any) {
-      if (error.message === "Módulo não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { AdminService } from "../services/adminService";
+import { sendError } from "../utils/httpError";
 
 const adminService = new AdminService();
 
@@ -8,8 +9,8 @@ export const adminController = {
     try {
       const stats = await adminService.getDashboardStats();
       res.json(stats);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar estatísticas" });
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -21,8 +22,8 @@ export const adminController = {
 
       const result = await adminService.getAllUsers(page, limit, search);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar usuários" });
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -31,8 +32,8 @@ export const adminController = {
       const { id } = req.params;
       const user = await adminService.getUserById(id);
       res.json(user);
-    } catch (error: any) {
-      res.status(404).json({ error: error.message || "Usuário não encontrado" });
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -47,8 +48,8 @@ export const adminController = {
 
       const updated = await adminService.updateUserRole(id, role, req.user!.userId);
       res.json(updated);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message || "Erro ao atualizar papel do usuário" });
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -67,8 +68,8 @@ export const adminController = {
 
       const result = await adminService.resetUserPassword(id, newPassword);
       res.json({ message: "Senha resetada com sucesso", user: result });
-    } catch (error: any) {
-      res.status(400).json({ error: error.message || "Erro ao resetar senha" });
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -81,9 +82,8 @@ export const adminController = {
 
       const result = await adminService.transferContent(req.params.id, targetUserId, req.user!.userId);
       res.json(result);
-    } catch (error: any) {
-      const status = error.message === "Usuário não encontrado" ? 404 : 400;
-      res.status(status).json({ error: error.message || "Erro ao transferir conteúdo" });
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -92,9 +92,8 @@ export const adminController = {
       const { id } = req.params;
       const result = await adminService.deleteUser(id, req.user!.userId);
       res.json(result);
-    } catch (error: any) {
-      const status = error.message === "Usuário não encontrado" ? 404 : 400;
-      res.status(status).json({ error: error.message || "Erro ao deletar usuário" });
+    } catch (error) {
+      sendError(res, error);
     }
   },
 };

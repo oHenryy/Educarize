@@ -148,7 +148,7 @@ export class ProgressService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     const totalLessons = course.modules.reduce(

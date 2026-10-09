@@ -20,11 +20,8 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const { data } = await api.post<{ token: string; user: User }>(
-        "/auth/login",
-        { email, password }
-      );
-      login({ token: data.token, user: data.user });
+      const { data } = await api.post<{ user: User }>("/auth/login", { email, password });
+      login(data.user);
       navigate(from, { replace: true });
     } catch (err) {
       setError(getErrorMessage(err, "Falha ao fazer login"));
@@ -71,6 +68,9 @@ export default function LoginPage() {
       </form>
 
       <p className="muted" style={{ marginTop: "12px" }}>
+        <Link to="/forgot-password">Esqueci minha senha</Link>
+      </p>
+      <p className="muted" style={{ marginTop: "4px" }}>
         Ainda não tem conta? <Link to="/register">Criar conta</Link>
       </p>
     </div>

@@ -47,6 +47,9 @@ prisma/migrations/*.sql
 # Testing
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
+blob-report/
 
 # Temporary files
 tmp/
@@ -57,3 +60,6 @@ temp/
 Thumbs.db
 .DS_Store
 
+
+# Caixa de saída de e-mails em desenvolvimento
+outbox/

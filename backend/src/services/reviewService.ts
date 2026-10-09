@@ -1,10 +1,11 @@
 import { prisma } from "../config/database";
 import { NotificationService } from "./notificationService";
 import { isEnrolled } from "../utils/courseAccess";
+import { HttpError } from "../utils/httpError";
 
 function validateRating(rating: unknown): void {
   if (typeof rating !== "number" || !Number.isInteger(rating) || rating < 1 || rating > 5) {
-    throw new Error("Avaliação deve ser um número inteiro entre 1 e 5 estrelas");
+    throw new HttpError(400, "Avaliação deve ser um número inteiro entre 1 e 5 estrelas");
   }
 }
 
@@ -17,15 +18,15 @@ export class ReviewService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     if (course.instructorId === userId) {
-      throw new Error("Você não pode avaliar seu próprio curso");
+      throw new HttpError(403, "Você não pode avaliar seu próprio curso");
     }
 
     if (!(await isEnrolled(userId, courseId))) {
-      throw new Error("Você precisa estar matriculado no curso para avaliá-lo");
+      throw new HttpError(403, "Você precisa estar matriculado no curso para avaliá-lo");
     }
 
     const existing = await prisma.courseReview.findUnique({
@@ -35,7 +36,7 @@ export class ReviewService {
     });
 
     if (existing) {
-      throw new Error("Você já avaliou este curso");
+      throw new HttpError(409, "Você já avaliou este curso");
     }
 
     const review = await prisma.courseReview.create({
@@ -81,11 +82,11 @@ export class ReviewService {
     });
 
     if (!review) {
-      throw new Error("Avaliação não encontrada");
+      throw new HttpError(404, "Avaliação não encontrada");
     }
 
     if (review.userId !== userId) {
-      throw new Error("Sem permissão para editar esta avaliação");
+      throw new HttpError(403, "Sem permissão para editar esta avaliação");
     }
 
     if (rating !== undefined) {
@@ -116,11 +117,11 @@ export class ReviewService {
     });
 
     if (!review) {
-      throw new Error("Avaliação não encontrada");
+      throw new HttpError(404, "Avaliação não encontrada");
     }
 
     if (review.userId !== userId) {
-      throw new Error("Sem permissão para deletar esta avaliação");
+      throw new HttpError(403, "Sem permissão para deletar esta avaliação");
     }
 
     await prisma.courseReview.delete({

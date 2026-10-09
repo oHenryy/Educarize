@@ -6,10 +6,11 @@ export const openApiSpec = {
     description: `API REST completa para o sistema de gerenciamento de aprendizado (LMS) Educarize.
 
 ## Autenticação
-A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endpoints protegidos:
-1. Faça login através do endpoint /auth/login
-2. Copie o token retornado
-3. Use o token no header: Authorization: Bearer <token>
+A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nunca é exposto ao JavaScript):
+1. Faça login em /auth/login (ou cadastre-se em /auth/register): o servidor define os cookies \`access_token\` (15 min) e \`refresh_token\` (7 dias, enviado apenas para /auth).
+2. Envie as requisições com os cookies (\`credentials: "include"\` / \`withCredentials: true\`).
+3. Quando a API responder 401 com \`code: "TOKEN_EXPIRED"\`, chame /auth/refresh e repita a requisição.
+4. Requisições que alteram dados (POST, PUT, DELETE) precisam do cabeçalho \`X-Requested-With: XMLHttpRequest\` (proteção CSRF).
 
 ## Papéis de Usuário
 - **ADMIN**: Acesso total ao sistema, incluindo gestão de usuários e logs de atividades
@@ -121,7 +122,6 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
               "application/json": {
                 schema: { $ref: "#/components/schemas/AuthResponse" },
                 example: {
-                  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                   user: {
                     id: "cmj8yi05p0000i95xczaw7sjr",
                     name: "João Silva",
@@ -195,7 +195,6 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
               "application/json": {
                 schema: { $ref: "#/components/schemas/AuthResponse" },
                 example: {
-                  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                   user: {
                     id: "cmj8yi05p0000i95xczaw7sjr",
                     name: "João Silva",
@@ -219,12 +218,99 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
         }
       }
     },
+    "/auth/refresh": {
+      post: {
+        tags: ["Autenticação"],
+        summary: "Renovar a sessão",
+        description: "Troca o cookie refresh_token por um novo par de cookies (rotação). Reapresentar um refresh token já usado encerra todas as sessões do usuário.",
+        responses: {
+          "200": { description: "Sessão renovada (novos cookies definidos)" },
+          "401": { description: "Sessão expirada ou revogada" }
+        }
+      }
+    },
+    "/auth/logout": {
+      post: {
+        tags: ["Autenticação"],
+        summary: "Encerrar a sessão",
+        description: "Revoga o refresh token atual e remove os cookies de sessão.",
+        responses: { "204": { description: "Sessão encerrada" } }
+      }
+    },
+    "/auth/forgot-password": {
+      post: {
+        tags: ["Autenticação"],
+        summary: "Solicitar redefinição de senha",
+        description: "Envia por e-mail um link válido por 1 hora. A resposta é a mesma exista ou não a conta.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { type: "object", required: ["email"], properties: { email: { type: "string", format: "email" } } }
+            }
+          }
+        },
+        responses: { "200": { description: "Pedido registrado" } }
+      }
+    },
+    "/auth/reset-password": {
+      post: {
+        tags: ["Autenticação"],
+        summary: "Redefinir a senha com o token recebido por e-mail",
+        description: "O token é de uso único. Todas as sessões do usuário são encerradas.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["token", "newPassword"],
+                properties: { token: { type: "string" }, newPassword: { type: "string", minLength: 6 } }
+              }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Senha redefinida" },
+          "400": { description: "Link inválido ou expirado" }
+        }
+      }
+    },
+    "/auth/verify-email": {
+      post: {
+        tags: ["Autenticação"],
+        summary: "Confirmar o e-mail com o token recebido",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { type: "object", required: ["token"], properties: { token: { type: "string" } } }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "E-mail confirmado" },
+          "400": { description: "Link inválido ou expirado" }
+        }
+      }
+    },
+    "/auth/resend-verification": {
+      post: {
+        tags: ["Autenticação"],
+        summary: "Reenviar o e-mail de confirmação",
+        security: [{ cookieAuth: [] }],
+        responses: {
+          "200": { description: "Link reenviado" },
+          "400": { description: "E-mail já confirmado" }
+        }
+      }
+    },
     "/auth/me": {
       get: {
         tags: ["Autenticação"],
         summary: "Dados do usuário autenticado",
         description: "Retorna os dados do usuário atualmente autenticado baseado no token JWT.",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Dados do usuário",
@@ -266,7 +352,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
         tags: ["Cursos"],
         summary: "Listar cursos",
         description: "Retorna uma lista de cursos com filtros opcionais. Estudantes veem apenas cursos publicados, enquanto instrutores e admins veem todos os cursos.",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           { 
             name: "categoryId", 
@@ -322,7 +408,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Cursos"],
         summary: "Criar curso (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -352,7 +438,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Cursos"],
         summary: "Obter detalhes de um curso",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Detalhes do curso" },
@@ -362,7 +448,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Cursos"],
         summary: "Atualizar curso",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           content: {
@@ -390,7 +476,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Cursos"],
         summary: "Deletar curso",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Curso deletado" },
@@ -402,7 +488,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Cursos"],
         summary: "Listar alunos do curso (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Lista de alunos" },
@@ -414,7 +500,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Módulos"],
         summary: "Listar módulos de um curso",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Lista de módulos" }
@@ -425,7 +511,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Módulos"],
         summary: "Criar módulo (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -452,7 +538,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Módulos"],
         summary: "Atualizar módulo",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           content: {
@@ -475,7 +561,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Módulos"],
         summary: "Deletar módulo",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Módulo deletado" }
@@ -486,7 +572,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Aulas"],
         summary: "Listar aulas de um módulo",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "moduleId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Lista de aulas" }
@@ -497,7 +583,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Aulas"],
         summary: "Obter detalhes de uma aula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Detalhes da aula" }
@@ -506,7 +592,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Aulas"],
         summary: "Atualizar aula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           content: {
@@ -531,7 +617,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Aulas"],
         summary: "Deletar aula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Aula deletada" }
@@ -542,7 +628,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Aulas"],
         summary: "Criar aula (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -571,7 +657,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Progresso"],
         summary: "Marcar aula como concluída",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -596,7 +682,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Progresso"],
         summary: "Marcar aula como não concluída",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -621,7 +707,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Progresso"],
         summary: "Obter progresso de um curso",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Progresso do curso" },
@@ -633,7 +719,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Progresso"],
         summary: "Obter progresso de uma aula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "lessonId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Progresso da aula" },
@@ -645,7 +731,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Comentários"],
         summary: "Listar comentários de uma aula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "lessonId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Lista de comentários" },
@@ -657,7 +743,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Comentários"],
         summary: "Criar comentário em uma aula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -684,7 +770,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Comentários"],
         summary: "Atualizar comentário",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           required: true,
@@ -709,7 +795,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Comentários"],
         summary: "Deletar comentário",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Comentário deletado" },
@@ -722,7 +808,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Quizzes"],
         summary: "Obter quiz de um módulo",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "moduleId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Quiz do módulo" },
@@ -735,7 +821,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Quizzes"],
         summary: "Submeter tentativa de quiz",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -764,7 +850,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Quizzes"],
         summary: "Listar tentativas de um quiz",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "quizId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Lista de tentativas" },
@@ -776,7 +862,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Quizzes"],
         summary: "Criar quiz (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -804,7 +890,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Quizzes"],
         summary: "Atualizar quiz",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           content: {
@@ -828,7 +914,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Quizzes"],
         summary: "Deletar quiz",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Quiz deletado" },
@@ -840,7 +926,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Quizzes"],
         summary: "Adicionar questão a um quiz",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -870,7 +956,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Quizzes"],
         summary: "Atualizar questão",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           required: true,
@@ -896,7 +982,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Quizzes"],
         summary: "Deletar questão",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Questão deletada" },
@@ -908,7 +994,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Administração"],
         summary: "Obter estatísticas do dashboard (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": { description: "Estatísticas do dashboard" },
           "403": { description: "Apenas ADMIN" }
@@ -919,7 +1005,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Administração"],
         summary: "Listar usuários (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "limit", in: "query", schema: { type: "integer", default: 20 } },
@@ -935,7 +1021,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Administração"],
         summary: "Transferir cursos e trilhas de um usuário para outro instrutor (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" }, description: "Usuário de origem" }
         ],
@@ -977,7 +1063,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Administração"],
         summary: "Obter detalhes de um usuário (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Detalhes do usuário" },
@@ -987,7 +1073,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Administração"],
         summary: "Deletar usuário (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Usuário deletado" },
@@ -999,7 +1085,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Administração"],
         summary: "Atualizar papel de um usuário (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           required: true,
@@ -1025,7 +1111,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Matrículas"],
         summary: "Matricular-se em um curso",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -1050,7 +1136,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Matrículas"],
         summary: "Listar meus cursos matriculados",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": { description: "Lista de cursos matriculados" }
         }
@@ -1060,7 +1146,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Matrículas"],
         summary: "Cancelar matrícula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Matrícula cancelada" }
@@ -1071,7 +1157,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Categorias"],
         summary: "Listar categorias",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": { description: "Lista de categorias" }
         }
@@ -1079,7 +1165,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Categorias"],
         summary: "Criar categoria (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -1105,7 +1191,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Certificados"],
         summary: "Listar meus certificados",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Lista de certificados do usuário",
@@ -1142,7 +1228,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Certificados"],
         summary: "Gerar certificado para um curso",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -1181,7 +1267,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Certificados"],
         summary: "Baixar certificado por ID",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           {
             name: "id",
@@ -1208,7 +1294,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Certificados"],
         summary: "Deletar certificado (permite regenerar)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           {
             name: "id",
@@ -1229,7 +1315,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
         tags: ["Autenticação"],
         summary: "Alterar senha do usuário autenticado",
         description: "Permite que o usuário altere sua própria senha. Requer a senha atual para validação.",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -1298,7 +1384,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Administração"],
         summary: "Resetar senha de um usuário (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           {
             name: "id",
@@ -1332,7 +1418,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Logs de Atividade"],
         summary: "Listar logs de atividades (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", default: 1 } },
           { name: "limit", in: "query", schema: { type: "integer", default: 50 } },
@@ -1350,7 +1436,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Logs de Atividade"],
         summary: "Obter log de atividade por ID (ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           {
             name: "id",
@@ -1371,7 +1457,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
         tags: ["Autenticação"],
         summary: "Listar usuários (para mensagens)",
         description: "Retorna uma lista básica de usuários para seleção em mensagens diretas",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Lista de usuários",
@@ -1401,7 +1487,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Favoritos"],
         summary: "Listar meus cursos favoritos",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Lista de cursos favoritos",
@@ -1420,7 +1506,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Favoritos"],
         summary: "Adicionar curso aos favoritos",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -1446,7 +1532,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Favoritos"],
         summary: "Remover curso dos favoritos",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Curso removido dos favoritos" },
@@ -1458,7 +1544,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Favoritos"],
         summary: "Verificar se curso está nos favoritos",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": {
@@ -1482,7 +1568,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Notas"],
         summary: "Listar minhas notas",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Lista de notas",
@@ -1501,7 +1587,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Notas"],
         summary: "Criar nota em uma aula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -1527,7 +1613,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Notas"],
         summary: "Atualizar nota",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           required: true,
@@ -1552,7 +1638,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Notas"],
         summary: "Deletar nota",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Nota deletada" },
@@ -1565,7 +1651,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Notas"],
         summary: "Listar notas de uma aula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "lessonId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": {
@@ -1587,7 +1673,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Avaliações"],
         summary: "Criar avaliação de curso",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -1615,7 +1701,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Avaliações"],
         summary: "Atualizar avaliação",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           required: true,
@@ -1640,7 +1726,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Avaliações"],
         summary: "Deletar avaliação",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Avaliação deletada" },
@@ -1673,7 +1759,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Avaliações"],
         summary: "Listar minhas avaliações",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Lista de minhas avaliações",
@@ -1694,7 +1780,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Notificações"],
         summary: "Listar minhas notificações",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Lista de notificações",
@@ -1715,7 +1801,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Notificações"],
         summary: "Marcar notificação como lida",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Notificação marcada como lida" },
@@ -1725,7 +1811,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Notificações"],
         summary: "Deletar notificação",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Notificação deletada" },
@@ -1737,7 +1823,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Notificações"],
         summary: "Marcar todas as notificações como lidas",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": { description: "Todas as notificações marcadas como lidas" },
           "401": { description: "Não autenticado" }
@@ -1748,7 +1834,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Notificações"],
         summary: "Obter contagem de notificações não lidas",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Contagem de notificações não lidas",
@@ -1788,7 +1874,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Tags"],
         summary: "Criar tag (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -1877,7 +1963,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Tags"],
         summary: "Adicionar tag a um curso (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           required: true,
@@ -1903,7 +1989,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Tags"],
         summary: "Remover tag de um curso (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           { name: "courseId", in: "path", required: true, schema: { type: "string" } },
           { name: "tagId", in: "path", required: true, schema: { type: "string" } }
@@ -1968,7 +2054,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Busca"],
         summary: "Buscar minhas notas",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           { name: "q", in: "query", schema: { type: "string" }, required: true, description: "Termo de busca" }
         ],
@@ -2060,7 +2146,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Trilhas de Aprendizado"],
         summary: "Criar trilha de aprendizado (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -2090,7 +2176,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Trilhas de Aprendizado"],
         summary: "Listar minhas trilhas",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Lista de trilhas do usuário",
@@ -2127,7 +2213,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Trilhas de Aprendizado"],
         summary: "Atualizar trilha (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           content: {
@@ -2154,7 +2240,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Trilhas de Aprendizado"],
         summary: "Deletar trilha (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Trilha deletada" },
@@ -2166,7 +2252,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Trilhas de Aprendizado"],
         summary: "Obter progresso em uma trilha",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": {
@@ -2185,7 +2271,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Trilhas de Aprendizado"],
         summary: "Adicionar curso a uma trilha (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           required: true,
@@ -2213,7 +2299,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Trilhas de Aprendizado"],
         summary: "Remover curso de uma trilha (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" } },
           { name: "courseId", in: "path", required: true, schema: { type: "string" } }
@@ -2229,7 +2315,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
         tags: ["Trilhas de Aprendizado"],
         summary: "Reordenar cursos de uma trilha (INSTRUCTOR/ADMIN)",
         description: "Recebe a lista completa de IDs de curso da trilha na nova ordem e aplica tudo em uma transação.",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" } }
         ],
@@ -2258,7 +2344,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Trilhas de Aprendizado"],
         summary: "Inscrever-se em uma trilha",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "201": { description: "Inscrito na trilha com sucesso" },
@@ -2271,7 +2357,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Mensagens"],
         summary: "Enviar mensagem direta",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -2305,7 +2391,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Mensagens"],
         summary: "Listar conversas",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Lista de conversas",
@@ -2334,7 +2420,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Mensagens"],
         summary: "Obter mensagens de uma conversa",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "userId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": {
@@ -2359,7 +2445,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Mensagens"],
         summary: "Marcar conversa como lida",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "userId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Conversa marcada como lida" },
@@ -2371,7 +2457,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Mensagens"],
         summary: "Marcar mensagem como lida",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Mensagem marcada como lida" },
@@ -2381,7 +2467,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Mensagens"],
         summary: "Deletar mensagem",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Mensagem deletada" },
@@ -2394,7 +2480,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Mensagens"],
         summary: "Obter contagem de mensagens não lidas",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Contagem de mensagens não lidas",
@@ -2417,7 +2503,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Instrutor"],
         summary: "Obter estatísticas do dashboard do instrutor (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         responses: {
           "200": {
             description: "Estatísticas do dashboard",
@@ -2464,7 +2550,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       get: {
         tags: ["Aulas"],
         summary: "Listar anexos de uma aula",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": {
@@ -2484,7 +2570,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Aulas"],
         summary: "Adicionar anexo a uma aula (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           required: true,
@@ -2517,7 +2603,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       put: {
         tags: ["Aulas"],
         summary: "Atualizar anexo (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "attachmentId", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           content: {
@@ -2546,7 +2632,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       delete: {
         tags: ["Aulas"],
         summary: "Deletar anexo (INSTRUCTOR/ADMIN)",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "attachmentId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Anexo deletado" },
@@ -2558,7 +2644,7 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       post: {
         tags: ["Aulas"],
         summary: "Registrar download de anexo",
-        security: [{ bearerAuth: [] }],
+        security: [{ cookieAuth: [] }],
         parameters: [{ name: "attachmentId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Download registrado" },
@@ -2569,11 +2655,11 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
   },
   components: {
     securitySchemes: {
-      bearerAuth: {
-        type: "http",
-        scheme: "bearer",
-        bearerFormat: "JWT",
-        description: "Token JWT obtido através do endpoint /auth/login"
+      cookieAuth: {
+        type: "apiKey",
+        in: "cookie",
+        name: "access_token",
+        description: "Cookie httpOnly definido por /auth/login, /auth/register e /auth/refresh"
       }
     },
     schemas: {
@@ -3037,17 +3123,14 @@ A API utiliza autenticação baseada em JWT (JSON Web Tokens). Para acessar endp
       },
       AuthResponse: {
         type: "object",
+        description: "Os tokens de sessão são enviados apenas como cookies httpOnly (Set-Cookie), nunca no corpo.",
         properties: {
-          token: { 
-            type: "string", 
-            description: "Token JWT para autenticação" 
-          },
-          user: { 
+          user: {
             $ref: "#/components/schemas/User",
             description: "Dados do usuário autenticado"
           }
         },
-        required: ["token", "user"]
+        required: ["user"]
       },
       Pagination: {
         type: "object",

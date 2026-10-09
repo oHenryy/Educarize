@@ -155,11 +155,11 @@ export class CommentService {
     });
 
     if (!existing) {
-      throw new Error("Comentário não encontrado");
+      throw new HttpError(404, "Comentário não encontrado");
     }
 
     if (existing.userId !== userId) {
-      throw new Error("Sem permissão para editar este comentário");
+      throw new HttpError(403, "Sem permissão para editar este comentário");
     }
 
     const updated = await prisma.lessonComment.update({
@@ -196,11 +196,11 @@ export class CommentService {
     });
 
     if (!existing) {
-      throw new Error("Comentário não encontrado");
+      throw new HttpError(404, "Comentário não encontrado");
     }
 
     if (existing.userId !== userId && role !== "ADMIN") {
-      throw new Error("Sem permissão para deletar este comentário");
+      throw new HttpError(403, "Sem permissão para deletar este comentário");
     }
 
     // Remove as respostas junto, para não virarem comentários "órfãos" no nível principal.

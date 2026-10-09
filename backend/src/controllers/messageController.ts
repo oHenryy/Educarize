@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { MessageService } from "../services/messageService";
+import { sendError } from "../utils/httpError";
 
 const messageService = new MessageService();
 
@@ -18,12 +19,8 @@ export class MessageController {
         content
       );
       res.status(201).json(message);
-    } catch (error: any) {
-      if (error.message === "Usuário destinatário não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao enviar mensagem" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -40,8 +37,8 @@ export class MessageController {
         limit
       );
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar conversa" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -49,8 +46,8 @@ export class MessageController {
     try {
       const conversations = await messageService.getConversations(req.user!.userId);
       res.json(conversations);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar conversas" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -61,14 +58,8 @@ export class MessageController {
         req.user!.userId
       );
       res.json(message);
-    } catch (error: any) {
-      if (error.message === "Mensagem não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao marcar como lida" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -77,8 +68,8 @@ export class MessageController {
       const { userId } = req.params;
       await messageService.markConversationAsRead(req.user!.userId, userId);
       res.json({ message: "Conversa marcada como lida" });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao marcar conversa como lida" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -86,8 +77,8 @@ export class MessageController {
     try {
       const count = await messageService.getUnreadCount(req.user!.userId);
       res.json({ count });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar contador" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -95,14 +86,8 @@ export class MessageController {
     try {
       await messageService.deleteMessage(req.params.id, req.user!.userId);
       res.status(204).send();
-    } catch (error: any) {
-      if (error.message === "Mensagem não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao deletar mensagem" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

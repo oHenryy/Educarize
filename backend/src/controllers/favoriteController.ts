@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { FavoriteService } from "../services/favoriteService";
+import { sendError } from "../utils/httpError";
 
 const favoriteService = new FavoriteService();
 
@@ -16,12 +17,8 @@ export class FavoriteController {
 
       const favorite = await favoriteService.addFavorite(userId, courseId);
       res.status(201).json(favorite);
-    } catch (error: any) {
-      if (error.message === "Curso não encontrado" || error.message === "Curso já está nos favoritos") {
-        res.status(400).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -32,12 +29,8 @@ export class FavoriteController {
 
       const result = await favoriteService.removeFavorite(userId, courseId);
       res.json(result);
-    } catch (error: any) {
-      if (error.message === "Favorito não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -46,8 +39,8 @@ export class FavoriteController {
       const userId = req.user!.userId;
       const favorites = await favoriteService.getMyFavorites(userId);
       res.json(favorites);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -58,8 +51,8 @@ export class FavoriteController {
 
       const isFav = await favoriteService.isFavorite(userId, courseId);
       res.json({ isFavorite: isFav });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

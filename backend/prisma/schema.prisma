@@ -15,6 +15,8 @@ model User {
   /// Papel do usuário: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT'
   role             String          @default("STUDENT")
   avatarUrl        String?
+  /// Preenchido quando o usuário confirma o e-mail
+  emailVerifiedAt  DateTime?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   activityLogs     ActivityLog[]
@@ -32,6 +34,36 @@ model User {
   progress         UserProgress[]
   learningPathsCreated LearningPath[] @relation("LearningPathInstructor")
   learningPathEnrollments LearningPathEnrollment[] @relation("LearningPathEnrollments")
+  refreshTokens    RefreshToken[]
+  authTokens       AuthToken[]
+}
+
+/// Sessão de login: guarda apenas o hash do refresh token (rotacionado a cada uso).
+model RefreshToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Tokens de uso único enviados por e-mail (redefinição de senha e verificação de e-mail).
+model AuthToken {
+  id         String    @id @default(cuid())
+  userId     String
+  /// 'PASSWORD_RESET' | 'EMAIL_VERIFICATION'
+  type       String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
 }
 
 model CourseCategory {
@@ -226,14 +258,20 @@ model LessonComment {
 }
 
 model Certificate {
-  id       String   @id @default(cuid())
+  id                  String   @id @default(cuid())
   /// URL do PDF do certificado gerado
-  pdfUrl   String
-  userId   String
-  courseId String
-  issuedAt DateTime @default(now())
-  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pdfUrl              String
+  userId              String
+  /// Fica nulo se o curso for excluído: o certificado emitido continua válido.
+  courseId            String?
+  /// Cópia dos dados no momento da emissão (independe de alterações ou exclusão do curso)
+  courseTitle         String
+  courseDurationHours Int      @default(0)
+  instructorName      String
+  studentName         String
+  issuedAt            DateTime @default(now())
+  course              Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, courseId])
   @@index([userId])

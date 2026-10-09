@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { HttpError } from "../utils/httpError";
 
 export class CategoryService {
   async list() {
@@ -19,7 +20,7 @@ export class CategoryService {
       });
     } catch (error: any) {
       if (error.code === "P2002") {
-        throw new Error("Categoria já existe");
+        throw new HttpError(409, "Categoria já existe");
       }
       throw error;
     }

@@ -10,7 +10,7 @@ export class CommentController {
       const { lessonId } = req.params;
       const comments = await commentService.listByLesson(lessonId, req.user!);
       res.json(comments);
-    } catch (error: any) {
+    } catch (error) {
       sendError(res, error);
     }
   }
@@ -30,7 +30,7 @@ export class CommentController {
         parentId
       );
       res.status(201).json(comment);
-    } catch (error: any) {
+    } catch (error) {
       sendError(res, error);
     }
   }
@@ -50,14 +50,8 @@ export class CommentController {
         content
       );
       res.json(updated);
-    } catch (error: any) {
-      if (error.message === "Comentário não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -66,14 +60,8 @@ export class CommentController {
       const { id } = req.params;
       await commentService.delete(id, req.user!.userId, req.user!.role);
       res.json({ message: "Comentário deletado com sucesso" });
-    } catch (error: any) {
-      if (error.message === "Comentário não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

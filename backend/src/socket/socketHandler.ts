@@ -1,8 +1,10 @@
 import { Server as SocketServer, Socket } from "socket.io";
-import jwt from "jsonwebtoken";
-import { config } from "../config/env";
-import { prisma } from "../config/database";
+import { parse as parseCookie } from "cookie";
+import { resolveUser } from "../middleware/authMiddleware";
+import { ACCESS_COOKIE } from "../utils/authCookies";
 import { MessageService } from "../services/messageService";
+import { sendMessageBody } from "../validation/schemas";
+import { toHttpResponse } from "../utils/httpError";
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -12,28 +14,16 @@ interface AuthenticatedSocket extends Socket {
 export function setupSocketIO(io: SocketServer) {
   const messageService = new MessageService();
 
+  // O navegador envia o cookie httpOnly da sessão no handshake (withCredentials no cliente).
   io.use(async (socket: AuthenticatedSocket, next) => {
-    try {
-      const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace("Bearer ", "");
-
-      if (!token) {
-        return next(new Error("Token não fornecido"));
-      }
-
-      const decoded = jwt.verify(token, config.jwtSecret) as { userId: string; role: string };
-      const user = await prisma.user.findUnique({
-        where: { id: decoded.userId },
-        select: { id: true, role: true },
-      });
-      if (!user) {
-        return next(new Error("Usuário não encontrado"));
-      }
-      socket.userId = user.id;
-      socket.userRole = user.role;
-      next();
-    } catch (error) {
-      next(new Error("Token inválido"));
+    const cookies = parseCookie(socket.handshake.headers.cookie || "");
+    const result = await resolveUser(cookies[ACCESS_COOKIE]);
+    if ("error" in result) {
+      return next(new Error(result.error === "expired" ? "Sessão expirada" : "Não autenticado"));
     }
+    socket.userId = result.user.userId;
+    socket.userRole = result.user.role;
+    next();
   });
 
   io.on("connection", (socket: AuthenticatedSocket) => {
@@ -47,12 +37,12 @@ export function setupSocketIO(io: SocketServer) {
 
     socket.on("send_message", async (data: { receiverId: string; content: string }) => {
       try {
-        const { receiverId, content } = data;
-
-        if (!receiverId || typeof content !== "string" || !content.trim()) {
-          socket.emit("error", { message: "receiverId e content são obrigatórios" });
+        const parsed = sendMessageBody.safeParse(data);
+        if (!parsed.success) {
+          socket.emit("error", { message: parsed.error.issues[0]?.message || "Mensagem inválida" });
           return;
         }
+        const { receiverId, content } = parsed.data;
 
         const message = await messageService.sendMessage(userId, receiverId, content);
 
@@ -64,8 +54,8 @@ export function setupSocketIO(io: SocketServer) {
 
         const conversations = await messageService.getConversations(receiverId);
         io.to(`user:${receiverId}`).emit("conversations_update", conversations);
-      } catch (error: any) {
-        socket.emit("error", { message: error.message || "Erro ao enviar mensagem" });
+      } catch (error) {
+        socket.emit("error", { message: toHttpResponse(error).body.error });
       }
     });
 
@@ -73,8 +63,8 @@ export function setupSocketIO(io: SocketServer) {
       try {
         await messageService.markAsRead(data.messageId, userId);
         socket.emit("message_read", { messageId: data.messageId });
-      } catch (error: any) {
-        socket.emit("error", { message: error.message || "Erro ao marcar como lida" });
+      } catch (error) {
+        socket.emit("error", { message: toHttpResponse(error).body.error });
       }
     });
 
@@ -83,8 +73,8 @@ export function setupSocketIO(io: SocketServer) {
         await messageService.markConversationAsRead(userId, data.userId);
         const conversations = await messageService.getConversations(userId);
         socket.emit("conversations_update", conversations);
-      } catch (error: any) {
-        socket.emit("error", { message: error.message || "Erro ao marcar conversa como lida" });
+      } catch (error) {
+        socket.emit("error", { message: toHttpResponse(error).body.error });
       }
     });
 

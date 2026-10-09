@@ -18,7 +18,7 @@ export class ProgressController {
         lessonId
       );
       res.json(progress);
-    } catch (error: any) {
+    } catch (error) {
       sendError(res, error);
     }
   }
@@ -36,7 +36,7 @@ export class ProgressController {
         lessonId
       );
       res.json(progress || { message: "Progresso removido" });
-    } catch (error: any) {
+    } catch (error) {
       sendError(res, error);
     }
   }
@@ -49,12 +49,8 @@ export class ProgressController {
         courseId
       );
       res.json(progress);
-    } catch (error: any) {
-      if (error.message === "Curso não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -66,8 +62,8 @@ export class ProgressController {
         lessonId
       );
       res.json(progress || { completed: false });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

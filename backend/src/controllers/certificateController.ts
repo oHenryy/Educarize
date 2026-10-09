@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { CertificateService, getCertificateFilePath } from "../services/certificateService";
-import { sendError } from "../utils/httpError";
 import fs from "fs";
+import { sendError } from "../utils/httpError";
 
 const certificateService = new CertificateService();
 
@@ -11,8 +11,8 @@ export const certificateController = {
       const userId = req.user!.userId;
       const certificates = await certificateService.getMyCertificates(userId);
       res.json(certificates);
-    } catch (error: any) {
-      sendError(res, error, 500, "Erro ao buscar certificados");
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -27,8 +27,8 @@ export const certificateController = {
 
       const certificate = await certificateService.generateCertificate(userId, courseId);
       res.json({ id: certificate.id, pdfUrl: certificate.pdfUrl, message: "Certificado gerado com sucesso" });
-    } catch (error: any) {
-      sendError(res, error, 400, "Erro ao gerar certificado");
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -44,11 +44,11 @@ export const certificateController = {
         return res.status(404).json({ error: "Arquivo do certificado não encontrado" });
       }
 
-      const asciiName = `certificado_${certificate.course.title}`
+      const asciiName = `certificado_${certificate.courseTitle}`
         .normalize("NFD")
-        .replace(/[̀-ͯ]/g, "")
+        .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^a-zA-Z0-9_-]+/g, "_");
-      const utf8Name = encodeURIComponent(`certificado_${certificate.course.title.replace(/\s+/g, "_")}.pdf`);
+      const utf8Name = encodeURIComponent(`certificado_${certificate.courseTitle.replace(/\s+/g, "_")}.pdf`);
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
@@ -56,8 +56,8 @@ export const certificateController = {
         `attachment; filename="${asciiName}.pdf"; filename*=UTF-8''${utf8Name}`
       );
       res.sendFile(filePath);
-    } catch (error: any) {
-      sendError(res, error, 404, "Erro ao baixar certificado");
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -68,8 +68,8 @@ export const certificateController = {
 
       await certificateService.deleteCertificate(id, userId);
       res.json({ message: "Certificado deletado com sucesso" });
-    } catch (error: any) {
-      sendError(res, error, 404, "Erro ao deletar certificado");
+    } catch (error) {
+      sendError(res, error);
     }
   },
 };

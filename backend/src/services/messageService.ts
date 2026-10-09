@@ -1,10 +1,11 @@
 import { prisma } from "../config/database";
 import { NotificationService } from "./notificationService";
+import { HttpError } from "../utils/httpError";
 
 export class MessageService {
   async sendMessage(senderId: string, receiverId: string, content: string) {
     if (senderId === receiverId) {
-      throw new Error("Você não pode enviar mensagem para si mesmo");
+      throw new HttpError(400, "Você não pode enviar mensagem para si mesmo");
     }
 
     const receiver = await prisma.user.findUnique({
@@ -12,7 +13,7 @@ export class MessageService {
     });
 
     if (!receiver) {
-      throw new Error("Usuário destinatário não encontrado");
+      throw new HttpError(404, "Usuário destinatário não encontrado");
     }
 
     const message = await prisma.message.create({
@@ -178,11 +179,11 @@ export class MessageService {
     });
 
     if (!message) {
-      throw new Error("Mensagem não encontrada");
+      throw new HttpError(404, "Mensagem não encontrada");
     }
 
     if (message.receiverId !== userId) {
-      throw new Error("Você não tem permissão para marcar esta mensagem como lida");
+      throw new HttpError(403, "Você não tem permissão para marcar esta mensagem como lida");
     }
 
     return await prisma.message.update({
@@ -217,11 +218,11 @@ export class MessageService {
     });
 
     if (!message) {
-      throw new Error("Mensagem não encontrada");
+      throw new HttpError(404, "Mensagem não encontrada");
     }
 
     if (message.senderId !== userId) {
-      throw new Error("Você só pode deletar suas próprias mensagens");
+      throw new HttpError(403, "Você só pode deletar suas próprias mensagens");
     }
 
     await prisma.message.delete({

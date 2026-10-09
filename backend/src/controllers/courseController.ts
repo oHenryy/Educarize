@@ -19,8 +19,8 @@ export class CourseController {
         req.user!
       );
       res.json(courses);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -28,7 +28,7 @@ export class CourseController {
     try {
       const course = await courseService.getCourseById(req.params.id, req.user!);
       res.json(course);
-    } catch (error: any) {
+    } catch (error) {
       sendError(res, error);
     }
   }
@@ -61,12 +61,8 @@ export class CourseController {
 
       const course = await courseService.createCourse(data);
       res.status(201).json(course);
-    } catch (error: any) {
-      if (error.message.includes("Categoria não encontrada") || error.message.includes("Referência inválida")) {
-        res.status(400).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -99,16 +95,8 @@ export class CourseController {
         req.user!.role
       );
       res.json(course);
-    } catch (error: any) {
-      if (error.message === "Curso não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else if (error.message.includes("Categoria não encontrada") || error.message.includes("Dificuldade inválida") || error.message.includes("Status inválido")) {
-        res.status(400).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -116,14 +104,8 @@ export class CourseController {
     try {
       await courseService.deleteCourse(req.params.id, req.user!.userId, req.user!.role);
       res.json({ message: "Curso deletado com sucesso" });
-    } catch (error: any) {
-      if (error.message === "Curso não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -135,14 +117,8 @@ export class CourseController {
         req.user!.role
       );
       res.json(enrollments);
-    } catch (error: any) {
-      if (error.message === "Curso não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

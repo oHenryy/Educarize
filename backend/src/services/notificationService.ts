@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { HttpError } from "../utils/httpError";
 
 export class NotificationService {
   async createNotification(userId: string, title: string, message: string, type: string = "INFO") {
@@ -56,11 +57,11 @@ export class NotificationService {
     });
 
     if (!notification) {
-      throw new Error("Notificação não encontrada");
+      throw new HttpError(404, "Notificação não encontrada");
     }
 
     if (notification.userId !== userId) {
-      throw new Error("Sem permissão para acessar esta notificação");
+      throw new HttpError(403, "Sem permissão para acessar esta notificação");
     }
 
     return await prisma.notification.update({
@@ -89,11 +90,11 @@ export class NotificationService {
     });
 
     if (!notification) {
-      throw new Error("Notificação não encontrada");
+      throw new HttpError(404, "Notificação não encontrada");
     }
 
     if (notification.userId !== userId) {
-      throw new Error("Sem permissão para deletar esta notificação");
+      throw new HttpError(403, "Sem permissão para deletar esta notificação");
     }
 
     await prisma.notification.delete({

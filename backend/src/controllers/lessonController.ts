@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { LessonService } from "../services/lessonService";
-import { HttpError, sendError } from "../utils/httpError";
+import { sendError } from "../utils/httpError";
 
 const lessonService = new LessonService();
 
@@ -9,7 +9,7 @@ export class LessonController {
     try {
       const lessons = await lessonService.listByModule(req.params.moduleId, req.user!);
       res.json(lessons);
-    } catch (error: any) {
+    } catch (error) {
       sendError(res, error);
     }
   }
@@ -18,7 +18,7 @@ export class LessonController {
     try {
       const lesson = await lessonService.getById(req.params.id, req.user!);
       res.json(lesson);
-    } catch (error: any) {
+    } catch (error) {
       sendError(res, error);
     }
   }
@@ -36,16 +36,8 @@ export class LessonController {
         req.user!.role
       );
       res.status(201).json(lesson);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Módulo não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -59,16 +51,8 @@ export class LessonController {
         req.user!.role
       );
       res.json(updated);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Aula não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -76,14 +60,8 @@ export class LessonController {
     try {
       await lessonService.delete(req.params.id, req.user!.userId, req.user!.role);
       res.json({ message: "Aula deletada com sucesso" });
-    } catch (error: any) {
-      if (error.message === "Aula não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -101,16 +79,8 @@ export class LessonController {
         req.user!.role
       );
       res.status(201).json(attachment);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Aula não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -124,16 +94,8 @@ export class LessonController {
         req.user!.role
       );
       res.json(attachment);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Anexo não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -146,8 +108,8 @@ export class LessonController {
         category as string | undefined
       );
       res.json(attachments);
-    } catch (error: any) {
-      sendError(res, error, 500, "Erro ao buscar anexos");
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -156,8 +118,8 @@ export class LessonController {
       const attachmentId = req.params.attachmentId;
       await lessonService.incrementAttachmentDownload(attachmentId, req.user!);
       res.json({ message: "Download registrado" });
-    } catch (error: any) {
-      sendError(res, error, 500, "Erro ao registrar download");
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -165,14 +127,8 @@ export class LessonController {
     try {
       await lessonService.deleteAttachment(req.params.attachmentId, req.user!.userId, req.user!.role);
       res.json({ message: "Anexo deletado com sucesso" });
-    } catch (error: any) {
-      if (error.message === "Anexo não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { LearningPathService } from "../services/learningPathService";
-import { HttpError, sendError } from "../utils/httpError";
+import { sendError } from "../utils/httpError";
 
 const learningPathService = new LearningPathService();
 
@@ -15,8 +15,8 @@ export class LearningPathController {
 
       const learningPaths = await learningPathService.listLearningPaths(filters, req.user);
       res.json(learningPaths);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao listar trilhas" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -24,12 +24,8 @@ export class LearningPathController {
     try {
       const learningPath = await learningPathService.getLearningPathById(req.params.id, req.user);
       res.json(learningPath);
-    } catch (error: any) {
-      if (error.message === "Trilha de aprendizado não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao buscar trilha" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -55,12 +51,8 @@ export class LearningPathController {
         req.user!.role
       );
       res.status(201).json(learningPath);
-    } catch (error: any) {
-      if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao criar trilha" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -74,14 +66,8 @@ export class LearningPathController {
         req.user!.role
       );
       res.json(learningPath);
-    } catch (error: any) {
-      if (error.message === "Trilha de aprendizado não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao atualizar trilha" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -93,14 +79,8 @@ export class LearningPathController {
         req.user!.role
       );
       res.status(204).send();
-    } catch (error: any) {
-      if (error.message === "Trilha de aprendizado não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao deletar trilha" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -121,16 +101,8 @@ export class LearningPathController {
         isRequired
       );
       res.status(201).json(pathCourse);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Trilha de aprendizado não encontrada" || error.message === "Curso não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao adicionar curso" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -149,14 +121,8 @@ export class LearningPathController {
         req.user!.role
       );
       res.status(204).send();
-    } catch (error: any) {
-      if (error.message === "Trilha de aprendizado não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao remover curso" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -175,16 +141,8 @@ export class LearningPathController {
         req.user!.role
       );
       res.json(learningPath);
-    } catch (error: any) {
-      if (error instanceof HttpError) {
-        sendError(res, error);
-      } else if (error.message === "Trilha de aprendizado não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("Sem permissão")) {
-        res.status(403).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao reordenar cursos" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -195,14 +153,8 @@ export class LearningPathController {
         req.user!.userId
       );
       res.status(201).json(enrollment);
-    } catch (error: any) {
-      if (error.message === "Trilha de aprendizado não encontrada" || error.message === "Trilha não está publicada") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message === "Você já está matriculado nesta trilha") {
-        res.status(409).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao se matricular na trilha" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -213,12 +165,8 @@ export class LearningPathController {
         req.user!.userId
       );
       res.json(progress);
-    } catch (error: any) {
-      if (error.message === "Você não está matriculado nesta trilha") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message || "Erro ao buscar progresso" });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -226,8 +174,8 @@ export class LearningPathController {
     try {
       const paths = await learningPathService.getUserLearningPaths(req.user!.userId);
       res.json(paths);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar trilhas do usuário" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

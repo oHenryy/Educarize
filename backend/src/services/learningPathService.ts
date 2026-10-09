@@ -125,7 +125,7 @@ export class LearningPathService {
     });
 
     if (!learningPath) {
-      throw new Error("Trilha de aprendizado não encontrada");
+      throw new HttpError(404, "Trilha de aprendizado não encontrada");
     }
 
     if (learningPath.status !== "PUBLISHED") {
@@ -138,7 +138,7 @@ export class LearningPathService {
           select: { id: true },
         }));
       if (!isOwnerOrAdmin && !isEnrolled) {
-        throw new Error("Trilha de aprendizado não encontrada");
+        throw new HttpError(404, "Trilha de aprendizado não encontrada");
       }
     }
 
@@ -147,7 +147,7 @@ export class LearningPathService {
 
   async createLearningPath(data: CreateLearningPathData, userId: string, userRole: string) {
     if (data.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para criar trilha de aprendizado");
+      throw new HttpError(403, "Sem permissão para criar trilha de aprendizado");
     }
 
     const validDifficulties = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
@@ -201,11 +201,11 @@ export class LearningPathService {
     });
 
     if (!learningPath) {
-      throw new Error("Trilha de aprendizado não encontrada");
+      throw new HttpError(404, "Trilha de aprendizado não encontrada");
     }
 
     if (learningPath.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para editar esta trilha");
+      throw new HttpError(403, "Sem permissão para editar esta trilha");
     }
 
     let finalDifficulty: string | undefined = undefined;
@@ -253,11 +253,11 @@ export class LearningPathService {
     });
 
     if (!learningPath) {
-      throw new Error("Trilha de aprendizado não encontrada");
+      throw new HttpError(404, "Trilha de aprendizado não encontrada");
     }
 
     if (learningPath.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para deletar esta trilha");
+      throw new HttpError(403, "Sem permissão para deletar esta trilha");
     }
 
     const title = learningPath.title;
@@ -285,11 +285,11 @@ export class LearningPathService {
     });
 
     if (!learningPath) {
-      throw new Error("Trilha de aprendizado não encontrada");
+      throw new HttpError(404, "Trilha de aprendizado não encontrada");
     }
 
     if (learningPath.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para adicionar curso nesta trilha");
+      throw new HttpError(403, "Sem permissão para adicionar curso nesta trilha");
     }
 
     const course = await prisma.course.findUnique({
@@ -297,7 +297,7 @@ export class LearningPathService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     if (course.status !== "PUBLISHED") {
@@ -349,11 +349,11 @@ export class LearningPathService {
     });
 
     if (!learningPath) {
-      throw new Error("Trilha de aprendizado não encontrada");
+      throw new HttpError(404, "Trilha de aprendizado não encontrada");
     }
 
     if (learningPath.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para remover curso desta trilha");
+      throw new HttpError(403, "Sem permissão para remover curso desta trilha");
     }
 
     await prisma.learningPathCourse.deleteMany({
@@ -371,11 +371,11 @@ export class LearningPathService {
     });
 
     if (!learningPath) {
-      throw new Error("Trilha de aprendizado não encontrada");
+      throw new HttpError(404, "Trilha de aprendizado não encontrada");
     }
 
     if (learningPath.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para reordenar cursos desta trilha");
+      throw new HttpError(403, "Sem permissão para reordenar cursos desta trilha");
     }
 
     const current = new Set(learningPath.courses.map((c) => c.courseId));
@@ -408,11 +408,11 @@ export class LearningPathService {
     });
 
     if (!learningPath) {
-      throw new Error("Trilha de aprendizado não encontrada");
+      throw new HttpError(404, "Trilha de aprendizado não encontrada");
     }
 
     if (learningPath.status !== "PUBLISHED") {
-      throw new Error("Trilha não está publicada");
+      throw new HttpError(400, "Trilha não está publicada");
     }
 
     const existing = await prisma.learningPathEnrollment.findUnique({
@@ -425,7 +425,7 @@ export class LearningPathService {
     });
 
     if (existing) {
-      throw new Error("Você já está matriculado nesta trilha");
+      throw new HttpError(409, "Você já está matriculado nesta trilha");
     }
 
     const enrollment = await prisma.learningPathEnrollment.create({
@@ -529,7 +529,7 @@ export class LearningPathService {
     });
 
     if (!enrollment) {
-      throw new Error("Você não está matriculado nesta trilha");
+      throw new HttpError(404, "Você não está matriculado nesta trilha");
     }
 
     // O progresso considera apenas cursos obrigatórios (ou todos, se nenhum for marcado como obrigatório).

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { ReviewService } from "../services/reviewService";
+import { sendError } from "../utils/httpError";
 
 const reviewService = new ReviewService();
 
@@ -16,8 +17,8 @@ export class ReviewController {
 
       const review = await reviewService.createReview(userId, courseId, rating, comment);
       res.status(201).json(review);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -29,8 +30,8 @@ export class ReviewController {
 
       const review = await reviewService.updateReview(id, userId, rating, comment);
       res.json(review);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -41,8 +42,8 @@ export class ReviewController {
 
       const result = await reviewService.deleteReview(id, userId);
       res.json(result);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -54,8 +55,8 @@ export class ReviewController {
 
       const result = await reviewService.getCourseReviews(courseId, page, limit);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -64,8 +65,8 @@ export class ReviewController {
       const userId = req.user!.userId;
       const reviews = await reviewService.getMyReviews(userId);
       res.json(reviews);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

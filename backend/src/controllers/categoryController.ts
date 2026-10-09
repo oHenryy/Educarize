@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { CategoryService } from "../services/categoryService";
+import { sendError } from "../utils/httpError";
 
 const categoryService = new CategoryService();
 
@@ -8,8 +9,8 @@ export class CategoryController {
     try {
       const categories = await categoryService.list();
       res.json(categories);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -22,12 +23,8 @@ export class CategoryController {
       }
       const category = await categoryService.create(name, description);
       res.status(201).json(category);
-    } catch (error: any) {
-      if (error.message === "Categoria já existe") {
-        res.status(400).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

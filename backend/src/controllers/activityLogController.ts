@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { ActivityLogService } from "../services/activityLogService";
+import { sendError } from "../utils/httpError";
 
 const activityLogService = new ActivityLogService();
 
@@ -18,8 +19,8 @@ export const activityLogController = {
         userId,
       });
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar logs" });
+    } catch (error) {
+      sendError(res, error);
     }
   },
 
@@ -31,8 +32,8 @@ export const activityLogController = {
         return res.status(404).json({ error: "Log não encontrado" });
       }
       res.json(log);
-    } catch (error: any) {
-      res.status(404).json({ error: error.message || "Erro ao buscar log" });
+    } catch (error) {
+      sendError(res, error);
     }
   },
 };

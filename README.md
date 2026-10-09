@@ -129,24 +129,28 @@ Educarize/
 │   │   ├── controllers/      # Controladores HTTP
 │   │   ├── services/        # Lógica de negócio
 │   │   ├── routes/          # Definição de rotas
-│   │   ├── middleware/      # Middlewares (auth, validação)
-│   │   ├── utils/           # Utilitários
+│   │   ├── middleware/      # Middlewares (autenticação, CSRF, rate limit)
+│   │   ├── validation/      # Schemas zod e middleware de validação
+│   │   ├── utils/           # Utilitários (erros HTTP, e-mail, cookies, acesso a cursos)
 │   │   ├── socket/          # Handlers do Socket.io
 │   │   ├── docs/            # Documentação Swagger
 │   │   └── scripts/         # Scripts utilitários
 │   ├── prisma/
 │   │   ├── schema.prisma    # Schema do banco de dados
 │   │   └── migrations/      # Migrações do banco
+│   ├── tests/               # Testes de API (Vitest + Supertest)
 │   └── certificates/        # Certificados PDF gerados
 ├── frontend/
 │   ├── src/
 │   │   ├── api/             # Cliente HTTP (Axios)
 │   │   ├── components/      # Componentes React reutilizáveis
 │   │   ├── pages/           # Páginas da aplicação
-│   │   ├── context/         # Context API (Auth)
-│   │   ├── hooks/           # Custom hooks
+│   │   ├── context/         # Context API (Auth, Toast)
+│   │   ├── utils/           # Utilitários
 │   │   └── types.ts         # Definições TypeScript
 │   └── public/              # Arquivos estáticos
+├── e2e/                     # Testes de ponta a ponta (Playwright)
+├── .github/workflows/       # CI (GitHub Actions)
 └── README.md
 ```
 
@@ -237,12 +241,27 @@ Educarize/
 - `npm run prisma:generate` - Gera o cliente Prisma
 - `npm run prisma:migrate` - Executa migrações do banco
 - `npm run create-admin` - Cria um usuário administrador
+- `npm run typecheck` - Verifica os tipos do código e dos testes
+- `npm test` - Roda os testes de API (Vitest + Supertest) em um banco SQLite temporário
 
 #### Frontend
 - `npm run dev` - Inicia o servidor de desenvolvimento
 - `npm run build` - Compila para produção
 - `npm run preview` - Preview da build de produção
 - `npm run lint` - Executa o linter
+
+#### Testes de ponta a ponta (`e2e/`)
+- `npm install` e, na primeira vez, `npx playwright install chromium`
+- `npm test` - Sobe backend (banco temporário) e frontend automaticamente e roda os cenários no Chromium
+- `npm run test:edge` - Mesmo teste usando o Microsoft Edge instalado (sem baixar navegador)
+
+### Integração Contínua
+
+O workflow `.github/workflows/ci.yml` roda a cada push na `main` e em pull requests:
+1. **Backend**: checagem de tipos e testes de API
+2. **Frontend**: lint e build de produção
+3. **Ponta a ponta**: fluxos completos no navegador (após os dois anteriores passarem); em caso de falha, o
+   relatório do Playwright fica disponível como artefato
 
 ### Documentação da API
 
@@ -260,6 +279,27 @@ Acesse `http://localhost:4000/docs` para ver a documentação Swagger completa d
 - **Notificações**: Sistema automático de notificações para eventos importantes
 - **Busca**: Busca avançada com múltiplos filtros e sugestões
 - **Trilhas**: Organize cursos em sequências de aprendizado estruturadas
+
+### Sessão e Segurança
+
+- **Sessão em cookies httpOnly**: o login define `access_token` (15 min) e `refresh_token` (7 dias, enviado
+  apenas para `/auth`). O token nunca fica acessível ao JavaScript da página, o que protege contra roubo por XSS.
+- **Renovação automática**: quando o access token expira, o frontend chama `POST /auth/refresh` e repete a
+  requisição. O refresh token é trocado a cada uso; se um token já usado for reapresentado (indício de roubo),
+  todas as sessões do usuário são encerradas.
+- **Logout e troca de senha**: o logout revoga a sessão no servidor; trocar ou redefinir a senha encerra as
+  demais sessões.
+- **CSRF**: requisições que alteram dados exigem o cabeçalho `X-Requested-With: XMLHttpRequest` (o cliente da
+  aplicação já envia), e o CORS só aceita a origem configurada em `FRONTEND_URL`.
+- **Recuperação de senha**: link de uso único, válido por 1 hora, enviado por e-mail.
+- **Verificação de e-mail**: enviada no cadastro; com `REQUIRE_EMAIL_VERIFICATION=true` o login passa a exigi-la.
+  Sem `SMTP_HOST` configurado, os e-mails são exibidos no console do backend.
+- **Validação**: todas as entradas são validadas com `zod` (tipos, formatos e limites de tamanho); campos não
+  declarados são descartados. Erros inesperados retornam uma mensagem genérica, sem detalhes internos.
+- **Certificados**: guardam uma cópia dos dados do curso e continuam válidos mesmo que o curso seja excluído.
+- Cabeçalhos de segurança com `helmet`.
+
+As variáveis de ambiente opcionais (sessão, SMTP etc.) estão documentadas em `backend/.env.example`.
 
 ### Regras de Acesso
 

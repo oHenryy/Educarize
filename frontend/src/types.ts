@@ -6,6 +6,8 @@ export interface User {
   email: string;
   role: Role;
   avatarUrl?: string | null;
+  /** Nulo enquanto o e-mail não for confirmado. */
+  emailVerifiedAt?: string | null;
 }
 
 export interface Lesson {
@@ -104,7 +106,12 @@ export interface Certificate {
   id: string;
   pdfUrl: string;
   userId: string;
-  courseId: string;
+  /** Nulo se o curso foi excluído; os dados abaixo continuam disponíveis. */
+  courseId: string | null;
+  courseTitle: string;
+  courseDurationHours: number;
+  instructorName: string;
+  studentName: string;
   issuedAt: string;
   course?: {
     id: string;
@@ -114,7 +121,7 @@ export interface Certificate {
     instructor: {
       name: string;
     };
-  };
+  } | null;
 }
 
 export interface Favorite {

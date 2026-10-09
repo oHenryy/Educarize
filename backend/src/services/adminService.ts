@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
+import { SessionService } from "./sessionService";
+import { HttpError } from "../utils/httpError";
 
 export class AdminService {
   async getDashboardStats() {
@@ -349,7 +351,7 @@ export class AdminService {
     });
 
     if (!user) {
-      throw new Error("Usuário não encontrado");
+      throw new HttpError(404, "Usuário não encontrado");
     }
 
     return user;
@@ -357,12 +359,12 @@ export class AdminService {
 
   async updateUserRole(userId: string, newRole: string, requesterId: string) {
     if (userId === requesterId) {
-      throw new Error("Você não pode alterar o seu próprio papel");
+      throw new HttpError(400, "Você não pode alterar o seu próprio papel");
     }
 
     const validRoles = ["ADMIN", "INSTRUCTOR", "STUDENT"];
     if (!validRoles.includes(newRole)) {
-      throw new Error("Papel inválido");
+      throw new HttpError(400, "Papel inválido");
     }
 
     const user = await prisma.user.findUnique({
@@ -370,13 +372,13 @@ export class AdminService {
     });
 
     if (!user) {
-      throw new Error("Usuário não encontrado");
+      throw new HttpError(404, "Usuário não encontrado");
     }
 
     if (user.role !== "STUDENT" && newRole === "STUDENT") {
       const owned = await this.countOwnedContent(userId);
       if (owned.courses + owned.learningPaths > 0) {
-        throw new Error(
+        throw new HttpError(400, 
           `Este usuário é autor de ${owned.courses} curso(s) e ${owned.learningPaths} trilha(s). ` +
             "Transfira o conteúdo para outro instrutor antes de alterar o papel para STUDENT."
         );
@@ -408,14 +410,17 @@ export class AdminService {
   async resetUserPassword(userId: string, newPassword: string) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
-      throw new Error("Usuário não encontrado");
+      throw new HttpError(404, "Usuário não encontrado");
     }
 
     if (user.role === "ADMIN") {
-      throw new Error("Não é possível resetar senha de um usuário ADMIN");
+      throw new HttpError(403, "Não é possível resetar senha de um usuário ADMIN");
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Senha redefinida pelo admin: sessões abertas com a senha antiga são encerradas.
+    await new SessionService().revokeAll(userId);
 
     return await prisma.user.update({
       where: { id: userId },
@@ -441,7 +446,7 @@ export class AdminService {
   /** Transfere todos os cursos e trilhas de um usuário para outro instrutor/admin. */
   async transferContent(fromUserId: string, toUserId: string, requesterId: string) {
     if (fromUserId === toUserId) {
-      throw new Error("Selecione um destinatário diferente do usuário de origem");
+      throw new HttpError(400, "Selecione um destinatário diferente do usuário de origem");
     }
 
     const [fromUser, toUser] = await Promise.all([
@@ -450,11 +455,11 @@ export class AdminService {
     ]);
 
     if (!fromUser || !toUser) {
-      throw new Error("Usuário não encontrado");
+      throw new HttpError(404, "Usuário não encontrado");
     }
 
     if (toUser.role !== "INSTRUCTOR" && toUser.role !== "ADMIN") {
-      throw new Error("O destinatário precisa ser um instrutor ou administrador");
+      throw new HttpError(400, "O destinatário precisa ser um instrutor ou administrador");
     }
 
     const [courses, learningPaths] = await prisma.$transaction([
@@ -475,7 +480,7 @@ export class AdminService {
 
   async deleteUser(userId: string, requesterId: string) {
     if (userId === requesterId) {
-      throw new Error("Você não pode excluir a sua própria conta de administrador");
+      throw new HttpError(400, "Você não pode excluir a sua própria conta de administrador");
     }
 
     const user = await prisma.user.findUnique({
@@ -483,14 +488,14 @@ export class AdminService {
     });
 
     if (!user) {
-      throw new Error("Usuário não encontrado");
+      throw new HttpError(404, "Usuário não encontrado");
     }
 
     // Cursos não podem ficar sem instrutor e trilhas seriam apagadas em cascata:
     // o conteúdo precisa ser transferido antes da exclusão.
     const owned = await this.countOwnedContent(userId);
     if (owned.courses + owned.learningPaths > 0) {
-      throw new Error(
+      throw new HttpError(400, 
         `Este usuário é autor de ${owned.courses} curso(s) e ${owned.learningPaths} trilha(s). ` +
           "Transfira o conteúdo para outro instrutor antes de excluir o usuário."
       );

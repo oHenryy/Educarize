@@ -4,8 +4,9 @@ import * as fs from "fs";
 import * as path from "path";
 import { logActivity } from "../utils/activityLogger";
 import { HttpError } from "../utils/httpError";
+import { config } from "../config/env";
 
-const CERTS_DIR = path.join(process.cwd(), "certificates");
+const CERTS_DIR = path.resolve(process.cwd(), config.certificatesDir);
 
 /** Resolve o caminho do PDF a partir da URL salva, sem permitir sair da pasta de certificados. */
 export function getCertificateFilePath(pdfUrl: string): string {
@@ -163,14 +164,23 @@ export class CertificateService {
 
     const pdfUrl = `/certificates/file/${fileName}`;
 
+    // Cópia dos dados impressos no PDF: o certificado continua válido mesmo se o curso mudar ou for excluído.
+    const snapshot = {
+      courseTitle: course.title,
+      courseDurationHours: course.durationHours,
+      instructorName,
+      studentName: user.name,
+    };
+
     // Se existia registro mas o arquivo sumiu, apenas atualiza o registro com o novo PDF.
     const certificate = existing
-      ? await prisma.certificate.update({ where: { id: existing.id }, data: { pdfUrl } })
+      ? await prisma.certificate.update({ where: { id: existing.id }, data: { pdfUrl, ...snapshot } })
       : await prisma.certificate.create({
           data: {
             userId,
             courseId,
             pdfUrl,
+            ...snapshot,
           },
         });
 

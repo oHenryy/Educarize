@@ -1,6 +1,7 @@
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
 import { AuthUser, assertCourseContentAccess } from "../utils/courseAccess";
+import { HttpError } from "../utils/httpError";
 
 export class ModuleService {
   async listByCourse(courseId: string, user: AuthUser) {
@@ -26,11 +27,11 @@ export class ModuleService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     if (course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para criar módulo neste curso");
+      throw new HttpError(403, "Sem permissão para criar módulo neste curso");
     }
 
     const module = await prisma.module.create({
@@ -65,11 +66,11 @@ export class ModuleService {
     });
 
     if (!module) {
-      throw new Error("Módulo não encontrado");
+      throw new HttpError(404, "Módulo não encontrado");
     }
 
     if (module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para editar este módulo");
+      throw new HttpError(403, "Sem permissão para editar este módulo");
     }
 
     const updated = await prisma.module.update({
@@ -99,11 +100,11 @@ export class ModuleService {
     });
 
     if (!module) {
-      throw new Error("Módulo não encontrado");
+      throw new HttpError(404, "Módulo não encontrado");
     }
 
     if (module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para deletar este módulo");
+      throw new HttpError(403, "Sem permissão para deletar este módulo");
     }
 
     const moduleTitle = module.title;

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { InstructorService } from "../services/instructorService";
+import { sendError } from "../utils/httpError";
 
 const instructorService = new InstructorService();
 
@@ -9,8 +10,8 @@ export class InstructorController {
       const userId = req.user!.userId;
       const stats = await instructorService.getDashboardStats(userId);
       res.json(stats);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message || "Erro ao buscar estatísticas" });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

@@ -1,71 +1,65 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api/client";
+import { api, SESSION_EXPIRED_EVENT } from "../api/client";
 import type { User } from "../types";
 import { AuthContext } from "./auth-context";
 
-const STORAGE_KEY = "educarize_auth";
+/**
+ * Apenas os dados públicos do usuário ficam no localStorage, para a interface abrir sem "piscar".
+ * O token de sessão fica em cookie httpOnly, fora do alcance do JavaScript.
+ */
+const STORAGE_KEY = "educarize_user";
 
-type StoredAuth = { user: User; token: string };
-
-function readStoredAuth(): StoredAuth | null {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
+function readCachedUser(): User | null {
+  // Remove chaves da versão anterior, que guardava o token no localStorage.
+  localStorage.removeItem("token");
+  localStorage.removeItem("educarize_auth");
   try {
-    const parsed = JSON.parse(raw) as StoredAuth;
-    localStorage.setItem("token", parsed.token);
-    return parsed;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
   } catch {
     localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem("token");
     return null;
   }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Lido de forma síncrona na inicialização: evita um render extra "deslogado".
-  const [stored] = useState(readStoredAuth);
-  const [user, setUser] = useState<User | null>(stored?.user ?? null);
-  const [token, setToken] = useState<string | null>(stored?.token ?? null);
+  const [user, setUser] = useState<User | null>(readCachedUser);
+  const [loading, setLoading] = useState(true);
 
-  const persist = (data: StoredAuth) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    localStorage.setItem("token", data.token);
-  };
+  const updateUser = useCallback((nextUser: User | null) => {
+    setUser(nextUser);
+    if (nextUser) localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser));
+    else localStorage.removeItem(STORAGE_KEY);
+  }, []);
 
-  const login = (data: StoredAuth) => {
-    setUser(data.user);
-    setToken(data.token);
-    persist(data);
-  };
-
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem("token");
-  };
-
-  const updateUser = useCallback(
-    (nextUser: User) => {
-      setUser(nextUser);
-      if (token) persist({ user: nextUser, token });
-    },
-    [token]
-  );
-
-  // O papel pode ter sido alterado por um admin: sincroniza com o servidor ao abrir o app e após o login.
+  // Confirma a sessão com o servidor ao abrir o app (o papel pode ter mudado; o cookie pode ter expirado).
   useEffect(() => {
-    if (!token) return;
     api
       .get<{ user: User }>("/auth/me")
       .then((res) => updateUser(res.data.user))
-      .catch(() => {
-        // 401 já é tratado pelo interceptor (logout + redirecionamento).
-      });
-  }, [token, updateUser]);
+      .catch(() => updateUser(null))
+      .finally(() => setLoading(false));
+  }, [updateUser]);
+
+  // Sessão expirada e não renovável (ex.: usuário excluído ou refresh revogado).
+  useEffect(() => {
+    const onExpired = () => updateUser(null);
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, [updateUser]);
+
+  const login = (nextUser: User) => updateUser(nextUser);
+
+  const logout = async () => {
+    try {
+      await api.post("/auth/logout");
+    } finally {
+      updateUser(null);
+    }
+  };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading: false, login, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

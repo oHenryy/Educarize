@@ -75,7 +75,7 @@ export class LessonService {
     });
 
     if (!lesson) {
-      throw new Error("Aula não encontrada");
+      throw new HttpError(404, "Aula não encontrada");
     }
 
     return lesson;
@@ -99,11 +99,11 @@ export class LessonService {
     });
 
     if (!module) {
-      throw new Error("Módulo não encontrado");
+      throw new HttpError(404, "Módulo não encontrado");
     }
 
     if (module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para criar aula neste módulo");
+      throw new HttpError(403, "Sem permissão para criar aula neste módulo");
     }
 
     assertSafeUrl(data.videoUrl, "Link do vídeo");
@@ -157,11 +157,11 @@ export class LessonService {
     });
 
     if (!lesson) {
-      throw new Error("Aula não encontrada");
+      throw new HttpError(404, "Aula não encontrada");
     }
 
     if (lesson.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para editar esta aula");
+      throw new HttpError(403, "Sem permissão para editar esta aula");
     }
 
     assertSafeUrl(data.videoUrl, "Link do vídeo");
@@ -199,11 +199,11 @@ export class LessonService {
     });
 
     if (!lesson) {
-      throw new Error("Aula não encontrada");
+      throw new HttpError(404, "Aula não encontrada");
     }
 
     if (lesson.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para deletar esta aula");
+      throw new HttpError(403, "Sem permissão para deletar esta aula");
     }
 
     const lessonTitle = lesson.title;
@@ -243,11 +243,11 @@ export class LessonService {
     });
 
     if (!lesson) {
-      throw new Error("Aula não encontrada");
+      throw new HttpError(404, "Aula não encontrada");
     }
 
     if (lesson.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para adicionar anexo nesta aula");
+      throw new HttpError(403, "Sem permissão para adicionar anexo nesta aula");
     }
 
     assertSafeUrl(data.fileUrl, "Link do arquivo");
@@ -303,11 +303,11 @@ export class LessonService {
     });
 
     if (!attachment) {
-      throw new Error("Anexo não encontrado");
+      throw new HttpError(404, "Anexo não encontrado");
     }
 
     if (attachment.lesson.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para editar este anexo");
+      throw new HttpError(403, "Sem permissão para editar este anexo");
     }
 
     assertSafeUrl(data.fileUrl, "Link do arquivo");
@@ -377,11 +377,11 @@ export class LessonService {
     });
 
     if (!attachment) {
-      throw new Error("Anexo não encontrado");
+      throw new HttpError(404, "Anexo não encontrado");
     }
 
     if (attachment.lesson.module.course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para deletar este anexo");
+      throw new HttpError(403, "Sem permissão para deletar este anexo");
     }
 
     await prisma.lessonAttachment.delete({

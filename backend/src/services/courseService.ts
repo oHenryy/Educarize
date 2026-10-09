@@ -171,7 +171,7 @@ export class CourseService {
       });
 
       if (!category) {
-        throw new Error("Categoria não encontrada");
+        throw new HttpError(404, "Categoria não encontrada");
       }
 
       finalCategoryId = data.categoryId;
@@ -218,7 +218,7 @@ export class CourseService {
       return course;
     } catch (error: any) {
       if (error.code === "P2003") {
-        throw new Error("Referência inválida. Verifique se a categoria existe ou se o instrutor é válido.");
+        throw new HttpError(400, "Referência inválida. Verifique se a categoria existe ou se o instrutor é válido.");
       }
       throw error;
     }
@@ -230,11 +230,11 @@ export class CourseService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     if (course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para editar este curso");
+      throw new HttpError(403, "Sem permissão para editar este curso");
     }
 
     let finalCategoryId: string | null | undefined = undefined;
@@ -247,7 +247,7 @@ export class CourseService {
         });
 
         if (!category) {
-          throw new Error("Categoria não encontrada");
+          throw new HttpError(404, "Categoria não encontrada");
         }
 
         finalCategoryId = data.categoryId;
@@ -260,7 +260,7 @@ export class CourseService {
       if (validDifficulties.includes(data.difficulty)) {
         finalDifficulty = data.difficulty;
       } else {
-        throw new Error("Dificuldade inválida. Use: BEGINNER, INTERMEDIATE ou ADVANCED");
+        throw new HttpError(400, "Dificuldade inválida. Use: BEGINNER, INTERMEDIATE ou ADVANCED");
       }
     }
 
@@ -268,12 +268,12 @@ export class CourseService {
     if (data.status) {
       const validStatuses = ["DRAFT", "PUBLISHED", "ARCHIVED", "SUSPENDED"];
       if (!validStatuses.includes(data.status)) {
-        throw new Error("Status inválido. Use: DRAFT, PUBLISHED, ARCHIVED ou SUSPENDED");
+        throw new HttpError(400, "Status inválido. Use: DRAFT, PUBLISHED, ARCHIVED ou SUSPENDED");
       }
       // Suspensão é uma ação administrativa: instrutor não pode suspender nem reativar curso suspenso.
       if (userRole !== "ADMIN" && data.status !== course.status &&
           (data.status === "SUSPENDED" || course.status === "SUSPENDED")) {
-        throw new Error("Sem permissão: apenas administradores podem suspender ou reativar cursos suspensos");
+        throw new HttpError(403, "Sem permissão: apenas administradores podem suspender ou reativar cursos suspensos");
       }
       finalStatus = data.status;
     }
@@ -313,7 +313,7 @@ export class CourseService {
       return updated;
     } catch (error: any) {
       if (error.code === "P2003") {
-        throw new Error("Referência inválida. Verifique se a categoria existe.");
+        throw new HttpError(400, "Referência inválida. Verifique se a categoria existe.");
       }
       throw error;
     }
@@ -325,11 +325,11 @@ export class CourseService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     if (course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para deletar este curso");
+      throw new HttpError(403, "Sem permissão para deletar este curso");
     }
 
     const courseTitle = course.title;
@@ -352,11 +352,11 @@ export class CourseService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     if (course.instructorId !== userId && userRole !== "ADMIN") {
-      throw new Error("Sem permissão para ver alunos deste curso");
+      throw new HttpError(403, "Sem permissão para ver alunos deste curso");
     }
 
     return await prisma.enrollment.findMany({

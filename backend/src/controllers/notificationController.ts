@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { NotificationService } from "../services/notificationService";
+import { sendError } from "../utils/httpError";
 
 const notificationService = new NotificationService();
 
@@ -12,8 +13,8 @@ export class NotificationController {
 
       const result = await notificationService.getMyNotifications(userId, page, limit);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -24,8 +25,8 @@ export class NotificationController {
 
       const notification = await notificationService.markAsRead(id, userId);
       res.json(notification);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -34,8 +35,8 @@ export class NotificationController {
       const userId = req.user!.userId;
       const result = await notificationService.markAllAsRead(userId);
       res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -46,8 +47,8 @@ export class NotificationController {
 
       const result = await notificationService.deleteNotification(id, userId);
       res.json(result);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -56,8 +57,8 @@ export class NotificationController {
       const userId = req.user!.userId;
       const count = await notificationService.getUnreadCount(userId);
       res.json({ unreadCount: count });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { HttpError } from "../utils/httpError";
 
 export class FavoriteService {
   async addFavorite(userId: string, courseId: string) {
@@ -7,7 +8,7 @@ export class FavoriteService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     const existing = await prisma.favorite.findUnique({
@@ -17,7 +18,7 @@ export class FavoriteService {
     });
 
     if (existing) {
-      throw new Error("Curso já está nos favoritos");
+      throw new HttpError(409, "Curso já está nos favoritos");
     }
 
     return await prisma.favorite.create({
@@ -46,7 +47,7 @@ export class FavoriteService {
     });
 
     if (!favorite) {
-      throw new Error("Favorito não encontrado");
+      throw new HttpError(404, "Favorito não encontrado");
     }
 
     await prisma.favorite.delete({

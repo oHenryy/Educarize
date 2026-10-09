@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { EnrollmentService } from "../services/enrollmentService";
+import { sendError } from "../utils/httpError";
 
 const enrollmentService = new EnrollmentService();
 
@@ -13,14 +14,8 @@ export class EnrollmentController {
       }
       const enrollment = await enrollmentService.enroll(req.user!.userId, courseId);
       res.status(201).json(enrollment);
-    } catch (error: any) {
-      if (error.message === "Curso não encontrado") {
-        res.status(404).json({ error: error.message });
-      } else if (error.message.includes("já está matriculado") || error.message.includes("não está publicado")) {
-        res.status(400).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -28,8 +23,8 @@ export class EnrollmentController {
     try {
       const enrollments = await enrollmentService.getMyEnrollments(req.user!.userId);
       res.json(enrollments);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -37,12 +32,8 @@ export class EnrollmentController {
     try {
       await enrollmentService.cancelEnrollment(req.user!.userId, req.params.courseId);
       res.json({ message: "Matrícula cancelada com sucesso" });
-    } catch (error: any) {
-      if (error.message === "Matrícula não encontrada") {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: error.message });
-      }
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

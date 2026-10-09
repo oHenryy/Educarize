@@ -1,6 +1,7 @@
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
 import { NotificationService } from "./notificationService";
+import { HttpError } from "../utils/httpError";
 
 export class EnrollmentService {
   async enroll(userId: string, courseId: string) {
@@ -9,7 +10,7 @@ export class EnrollmentService {
     });
 
     if (!course) {
-      throw new Error("Curso não encontrado");
+      throw new HttpError(404, "Curso não encontrado");
     }
 
     if (course.status !== "PUBLISHED") {
@@ -18,7 +19,7 @@ export class EnrollmentService {
         ARCHIVED: "Curso foi arquivado e não aceita novas matrículas",
         SUSPENDED: "Curso está suspenso e não aceita novas matrículas",
       };
-      throw new Error(statusMessages[course.status] || "Curso não está disponível para matrícula");
+      throw new HttpError(400, statusMessages[course.status] || "Curso não está disponível para matrícula");
     }
 
     const existing = await prisma.enrollment.findUnique({
@@ -28,7 +29,7 @@ export class EnrollmentService {
     });
 
     if (existing) {
-      throw new Error("Você já está matriculado neste curso");
+      throw new HttpError(409, "Você já está matriculado neste curso");
     }
 
     const enrollment = await prisma.enrollment.create({
@@ -118,7 +119,7 @@ export class EnrollmentService {
     });
 
     if (!enrollment) {
-      throw new Error("Matrícula não encontrada");
+      throw new HttpError(404, "Matrícula não encontrada");
     }
 
     const course = await prisma.course.findUnique({

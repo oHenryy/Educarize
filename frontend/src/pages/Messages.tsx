@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { api, getErrorMessage } from "../api/client";
+import { api, API_URL, getErrorMessage, refreshSession } from "../api/client";
 import { useAuth } from "../context/useAuth";
 import type { Conversation, Message, User } from "../types";
 import { useToast } from "../context/useToast";
@@ -36,11 +36,9 @@ export default function MessagesPage() {
       return;
     }
 
-    const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
-    const socket = io(BACKEND_URL, {
-      auth: {
-        token: localStorage.getItem("token"),
-      },
+    // A autenticação usa o cookie httpOnly da sessão, enviado no handshake.
+    const socket = io(API_URL, {
+      withCredentials: true,
       transports: ["websocket", "polling"],
     });
 
@@ -93,8 +91,20 @@ export default function MessagesPage() {
       showToast(error?.message || "Erro na conexão de mensagens", "error");
     });
 
-    socket.on("connect_error", (error) => {
-      console.error("Erro de conexão Socket.io:", error);
+    let renewedOnce = false;
+    socket.on("connect_error", async (error) => {
+      // O access token dura poucos minutos: renova a sessão e tenta conectar de novo (uma vez).
+      if (error.message === "Sessão expirada" && !renewedOnce) {
+        renewedOnce = true;
+        try {
+          await refreshSession();
+          socket.connect();
+          return;
+        } catch {
+          // Sessão não renovável: o AuthProvider leva o usuário ao login.
+        }
+      }
+      console.warn("Erro de conexão Socket.io:", error.message);
     });
 
     fetchConversations();

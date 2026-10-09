@@ -16,8 +16,8 @@ export class NoteController {
 
       const note = await noteService.createNote(req.user!, lessonId, content);
       res.status(201).json(note);
-    } catch (error: any) {
-      sendError(res, error, 400);
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -34,8 +34,8 @@ export class NoteController {
 
       const note = await noteService.updateNote(id, userId, content);
       res.json(note);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -46,8 +46,8 @@ export class NoteController {
 
       const result = await noteService.deleteNote(id, userId);
       res.json(result);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -58,8 +58,8 @@ export class NoteController {
 
       const notes = await noteService.getLessonNotes(userId, lessonId);
       res.json(notes);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 
@@ -70,8 +70,8 @@ export class NoteController {
 
       const notes = await noteService.getMyNotes(userId, search);
       res.json(notes);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   }
 }

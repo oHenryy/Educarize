@@ -1,0 +1,14 @@
+{
+  "name": "educarize-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:edge": "cross-env PW_CHANNEL=msedge playwright test",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "cross-env": "^10.1.0"
+  }
+}
