@@ -59,6 +59,12 @@ const FAKE_YOUTUBE_API = `
 
 export async function newSession(browser: Browser, label: string): Promise<Session> {
   const context = await browser.newContext({ acceptDownloads: true });
+  // O iframe do player falso não carrega o YouTube de verdade: sem depender da internet e sem os avisos
+  // de console da página do YouTube (ex.: "Permissions policy violation"), que não são da aplicação.
+  await context.route(/^https:\/\/(www\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be|player\.vimeo\.com)\//, (route) =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html><title>player</title>" })
+  );
+  // Registrada depois, tem prioridade sobre a regra acima (o Playwright consulta as rotas da última para a primeira).
   await context.route("https://www.youtube.com/iframe_api", (route) =>
     route.fulfill({ contentType: "application/javascript", body: FAKE_YOUTUBE_API })
   );

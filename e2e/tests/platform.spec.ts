@@ -422,8 +422,15 @@ test.describe.serial("Educarize de ponta a ponta", () => {
     const p = bia.page;
     await p.getByTitle("Nova conversa").click();
     await p.fill('input[placeholder="Buscar usuário..."]', "Caio");
-    await expect(p.locator(".user-list .user-item")).toHaveCount(1);
     await expect(p.locator(".user-list")).toContainText("Caio Instrutor");
+    // Só aparecem usuários que casam com a busca (numa nova tentativa do CI, o banco já tem o Caio anterior).
+    // A lista começa com todos os usuários: espera a resposta da busca filtrar.
+    await expect
+      .poll(async () => {
+        const found = await p.locator(".user-list .user-item").allInnerTexts();
+        return found.length > 0 && found.every((text) => text.includes("Caio"));
+      })
+      .toBe(true);
     await p.fill('input[placeholder="Buscar usuário..."]', "inexistente-xyz");
     await expect(p.getByText("Nenhum usuário encontrado")).toBeVisible();
   });
