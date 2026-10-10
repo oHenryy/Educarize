@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { SearchService } from "../services/searchService";
 import { sendError } from "../utils/httpError";
+import { queryString } from "../utils";
 
 const searchService = new SearchService();
 
@@ -20,7 +21,7 @@ export class SearchController {
       } = req.query;
 
       const filters: any = {};
-      if (query) filters.query = query as string;
+      if (queryString(query)) filters.query = queryString(query);
       if (categoryId) filters.categoryId = categoryId as string;
       if (difficulty) filters.difficulty = difficulty as string;
       // Filtrar por status diferente de PUBLISHED é exclusivo de administradores.
@@ -43,7 +44,8 @@ export class SearchController {
 
   async searchLessons(req: Request, res: Response): Promise<void> {
     try {
-      const { query, courseId } = req.query;
+      const query = queryString(req.query.query);
+      const { courseId } = req.query;
 
       if (!query) {
         res.status(400).json({ error: "Query de busca é obrigatória" });
@@ -63,7 +65,7 @@ export class SearchController {
   async searchNotes(req: Request, res: Response): Promise<void> {
     try {
       const userId = req.user!.userId;
-      const { query } = req.query;
+      const query = queryString(req.query.query);
 
       if (!query) {
         res.status(400).json({ error: "Query de busca é obrigatória" });
@@ -89,9 +91,9 @@ export class SearchController {
 
   async getSearchSuggestions(req: Request, res: Response): Promise<void> {
     try {
-      const { query } = req.query;
+      const query = queryString(req.query.query);
 
-      if (!query || (query as string).length < 2) {
+      if (!query || query.length < 2) {
         res.json({ courses: [], tags: [] });
         return;
       }

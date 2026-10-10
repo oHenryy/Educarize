@@ -65,7 +65,8 @@ export class EnrollmentService {
       userId,
       "Matrícula realizada com sucesso!",
       `Você foi matriculado no curso "${enrollment.course.title}". Comece a estudar agora!`,
-      "SUCCESS"
+      "SUCCESS",
+      "ENROLLMENT"
     ).catch(err => console.error("Erro ao criar notificação:", err));
 
     if (course.instructorId) {
@@ -73,7 +74,8 @@ export class EnrollmentService {
         course.instructorId,
         "Novo aluno matriculado",
         `Um novo aluno se matriculou no seu curso "${enrollment.course.title}".`,
-        "INFO"
+        "INFO",
+        "ENROLLMENT"
       ).catch(err => console.error("Erro ao criar notificação para instrutor:", err));
     }
 

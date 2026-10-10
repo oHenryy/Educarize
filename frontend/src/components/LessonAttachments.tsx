@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, getErrorMessage } from "../api/client";
-import type { LessonAttachment } from "../types";
+import type { LessonAttachment, UploadedFile } from "../types";
+import FilePicker from "./FilePicker";
+import { formatBytes } from "../api/files";
 
 interface LessonAttachmentsProps {
   lessonId: string;
@@ -33,6 +35,9 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>("");
+  // Material novo: arquivo enviado ao Educarize (padrão) ou link para outro site.
+  const [source, setSource] = useState<"upload" | "link">("upload");
+  const [uploaded, setUploaded] = useState<UploadedFile | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -64,18 +69,28 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (source === "upload" && !editingId && !uploaded) {
+      setError("Escolha o arquivo a ser enviado");
+      return;
+    }
     try {
       const data: Record<string, unknown> = {
         name: formData.name,
         description: formData.description || undefined,
-        fileUrl: formData.fileUrl,
-        fileType: formData.fileType,
         category: formData.category || undefined,
         thumbnailUrl: formData.thumbnailUrl || undefined,
       };
 
-      if (formData.fileSize) {
-        data.fileSize = parseInt(formData.fileSize);
+      if (source === "link") {
+        // Link externo (ao editar um material enviado, trocar por link descarta o arquivo antigo).
+        data.fileUrl = formData.fileUrl;
+        data.fileType = formData.fileType;
+        if (formData.fileSize) {
+          data.fileSize = parseInt(formData.fileSize);
+        }
+      } else if (!editingId && uploaded) {
+        // Link, tipo e tamanho são preenchidos pelo servidor a partir do arquivo.
+        data.fileId = uploaded.id;
       }
       if (formData.order) {
         data.order = parseInt(formData.order);
@@ -98,6 +113,8 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
 
   const handleEdit = (attachment: LessonAttachment) => {
     setEditingId(attachment.id);
+    setSource(attachment.fileId ? "upload" : "link");
+    setUploaded(null);
     setFormData({
       name: attachment.name,
       description: attachment.description || "",
@@ -142,7 +159,16 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
     openSafely(attachment.fileUrl);
   };
 
+  const handleUploaded = (file: UploadedFile) => {
+    setUploaded(file);
+    setError(null);
+    // Sugere o nome do arquivo (sem extensão) se o nome ainda não foi preenchido.
+    setFormData((current) => (current.name ? current : { ...current, name: file.name.replace(/\.[^.]+$/, "") }));
+  };
+
   const resetForm = () => {
+    setSource("upload");
+    setUploaded(null);
     setFormData({
       name: "",
       description: "",
@@ -219,20 +245,33 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
                 required
               />
             </div>
-            <div className="form-group">
-              <label>Tipo *</label>
-              <select
-                value={formData.fileType}
-                onChange={(e) => setFormData({ ...formData, fileType: e.target.value })}
-                required
-              >
-                {fileTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {source === "link" && (
+              <div className="form-group">
+                <label>Tipo *</label>
+                <select
+                  value={formData.fileType}
+                  onChange={(e) => setFormData({ ...formData, fileType: e.target.value })}
+                  required
+                >
+                  {fileTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div className="attachment-source" role="radiogroup" aria-label="Origem do material">
+            <label>
+              <input type="radio" name="attachment-source" checked={source === "upload"} onChange={() => setSource("upload")} />
+              Enviar arquivo
+            </label>
+            <label>
+              <input type="radio" name="attachment-source" checked={source === "link"} onChange={() => setSource("link")} />
+              Link externo
+            </label>
           </div>
 
           <div className="form-group">
@@ -245,15 +284,32 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
           </div>
 
           <div className="form-row">
-            <div className="form-group">
-              <label>URL do Arquivo *</label>
-              <input
-                type="url"
-                value={formData.fileUrl}
-                onChange={(e) => setFormData({ ...formData, fileUrl: e.target.value })}
-                required
-              />
-            </div>
+            {source === "link" ? (
+              <div className="form-group">
+                <label>URL do Arquivo *</label>
+                <input
+                  type="url"
+                  value={formData.fileUrl}
+                  onChange={(e) => setFormData({ ...formData, fileUrl: e.target.value })}
+                  required
+                />
+              </div>
+            ) : editingId ? (
+              <div className="form-group">
+                <label>Arquivo</label>
+                <p className="muted">Arquivo já enviado. Para trocá-lo, exclua o material e envie de novo, ou use um link externo.</p>
+              </div>
+            ) : (
+              <div className="form-group">
+                <label>Arquivo *</label>
+                <FilePicker purpose="attachment" label="Escolher arquivo" onUploaded={handleUploaded} />
+                {uploaded && (
+                  <p className="uploaded-file">
+                    ✓ {uploaded.name} ({formatBytes(uploaded.size)})
+                  </p>
+                )}
+              </div>
+            )}
             <div className="form-group">
               <label>Categoria</label>
               <select
@@ -271,14 +327,16 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
           </div>
 
           <div className="form-row">
-            <div className="form-group">
-              <label>Tamanho (bytes)</label>
-              <input
-                type="number"
-                value={formData.fileSize}
-                onChange={(e) => setFormData({ ...formData, fileSize: e.target.value })}
-              />
-            </div>
+            {source === "link" && (
+              <div className="form-group">
+                <label>Tamanho (bytes)</label>
+                <input
+                  type="number"
+                  value={formData.fileSize}
+                  onChange={(e) => setFormData({ ...formData, fileSize: e.target.value })}
+                />
+              </div>
+            )}
             <div className="form-group">
               <label>Ordem</label>
               <input
@@ -350,10 +408,8 @@ export default function LessonAttachments({ lessonId, canEdit = false }: LessonA
                       )}
                       <div className="attachment-meta">
                         <span className="file-type">{attachment.fileType}</span>
-                        {attachment.fileSize && (
-                          <span className="file-size">
-                            {(attachment.fileSize / 1024).toFixed(1)} KB
-                          </span>
+                        {!!attachment.fileSize && (
+                          <span className="file-size">{formatBytes(attachment.fileSize)}</span>
                         )}
                         {attachment.downloadCount > 0 && (
                           <span className="download-count">

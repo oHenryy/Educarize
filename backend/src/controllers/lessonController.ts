@@ -56,6 +56,16 @@ export class LessonController {
     }
   }
 
+  async reorder(req: Request, res: Response): Promise<void> {
+    try {
+      const { moduleId, lessonIds } = req.body;
+      const lessons = await lessonService.reorder(moduleId, lessonIds, req.user!.userId, req.user!.role);
+      res.json(lessons);
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
+
   async delete(req: Request, res: Response): Promise<void> {
     try {
       await lessonService.delete(req.params.id, req.user!.userId, req.user!.role);
@@ -67,16 +77,13 @@ export class LessonController {
 
   async addAttachment(req: Request, res: Response): Promise<void> {
     try {
-      const { name, description, fileUrl, fileType, fileSize, category, order, thumbnailUrl } = req.body;
-      if (!name || !fileUrl || !fileType) {
-        res.status(400).json({ error: "Nome, fileUrl e fileType são obrigatórios" });
-        return;
-      }
+      const { name, description, fileId, fileUrl, fileType, fileSize, category, order, thumbnailUrl } = req.body;
       const attachment = await lessonService.addAttachment(
         req.params.id,
-        { name, description, fileUrl, fileType, fileSize, category, order, thumbnailUrl },
+        { name, description, fileId, fileUrl, fileType, fileSize, category, order, thumbnailUrl },
         req.user!.userId,
-        req.user!.role
+        req.user!.role,
+        `${req.protocol}://${req.get("host")}`
       );
       res.status(201).json(attachment);
     } catch (error) {

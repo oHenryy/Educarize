@@ -27,6 +27,7 @@ build/
 # Certificates
 backend/certificates/*.pdf
 !backend/certificates/.gitkeep
+backend/uploads/
 
 # IDE
 .vscode/

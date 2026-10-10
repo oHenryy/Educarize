@@ -4,6 +4,10 @@ import { logActivity } from "../utils/activityLogger";
 import { isEnumValue } from "../utils/enums";
 import { HttpError } from "../utils/httpError";
 import { AuthUser, isOwnerOrAdmin, isEnrolled } from "../utils/courseAccess";
+import { paginateRanked, rankedIds, sortByIds } from "../utils/textSearch";
+import { FileService } from "./fileService";
+
+const fileService = new FileService();
 
 export interface CourseFilters {
   categoryId?: string;
@@ -20,6 +24,7 @@ export interface CreateCourseData {
   durationHours?: number;
   difficulty?: string;
   categoryId?: string;
+  requireQuizzesForCertificate?: boolean;
   instructorId: string;
 }
 
@@ -31,6 +36,7 @@ export interface UpdateCourseData {
   difficulty?: string;
   categoryId?: string | null;
   status?: string;
+  requireQuizzesForCertificate?: boolean;
 }
 
 export class CourseService {
@@ -49,33 +55,41 @@ export class CourseService {
     } else {
       where.status = "PUBLISHED";
     }
-    if (filters.search) {
-      where.OR = [
-        { title: { contains: filters.search, mode: "insensitive" } },
-        { description: { contains: filters.search, mode: "insensitive" } },
-      ];
+    // Listagem paginada e enxuta: a estrutura de módulos/aulas só é carregada em GET /courses/:id.
+    const include = {
+      instructor: {
+        select: {
+          id: true,
+          name: true,
+          avatarUrl: true,
+        },
+      },
+      category: true,
+      _count: {
+        select: {
+          enrollments: true,
+          modules: true,
+        },
+      },
+    };
+
+    // Com busca, a ordem é por relevância (busca textual em português, sem acentos).
+    if (filters.search?.trim()) {
+      const { pageIds, total } = await paginateRanked(
+        await rankedIds("Course", filters.search),
+        async (ids) =>
+          (await prisma.course.findMany({ where: { AND: [where, { id: { in: ids } }] }, select: { id: true } })).map((c) => c.id),
+        page,
+        limit
+      );
+      const courses = sortByIds(await prisma.course.findMany({ where: { id: { in: pageIds } }, include }), pageIds);
+      return { courses, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
     }
 
-    // Listagem paginada e enxuta: a estrutura de módulos/aulas só é carregada em GET /courses/:id.
     const [courses, total] = await Promise.all([
       prisma.course.findMany({
         where,
-        include: {
-          instructor: {
-            select: {
-              id: true,
-              name: true,
-              avatarUrl: true,
-            },
-          },
-          category: true,
-          _count: {
-            select: {
-              enrollments: true,
-              modules: true,
-            },
-          },
-        },
+        include,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * limit,
         take: limit,
@@ -192,6 +206,7 @@ export class CourseService {
           difficulty: finalDifficulty,
           instructorId: data.instructorId,
           categoryId: finalCategoryId,
+          requireQuizzesForCertificate: data.requireQuizzesForCertificate ?? false,
           status: "DRAFT",
         },
         include: {
@@ -285,6 +300,9 @@ export class CourseService {
           ...(finalDifficulty && { difficulty: finalDifficulty }),
           ...(finalCategoryId !== undefined && { categoryId: finalCategoryId }),
           ...(finalStatus && { status: finalStatus }),
+          ...(data.requireQuizzesForCertificate !== undefined && {
+            requireQuizzesForCertificate: data.requireQuizzesForCertificate,
+          }),
         },
         include: {
           instructor: {
@@ -297,6 +315,10 @@ export class CourseService {
           category: true,
         },
       });
+
+      if (data.coverImageUrl !== undefined && data.coverImageUrl !== course.coverImageUrl) {
+        await fileService.deleteCoverByUrl(course.coverImageUrl);
+      }
 
       await logActivity({
         action: "COURSE_UPDATED",
@@ -329,9 +351,12 @@ export class CourseService {
     }
 
     const courseTitle = course.title;
+    const fileIds = await fileService.attachmentFileIds({ lesson: { module: { courseId: id } } });
     await prisma.course.delete({
       where: { id },
     });
+    await fileService.deleteCoverByUrl(course.coverImageUrl);
+    await fileService.deleteAllIfUnused(fileIds);
 
     await logActivity({
       action: "COURSE_DELETED",

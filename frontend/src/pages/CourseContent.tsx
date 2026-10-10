@@ -5,10 +5,24 @@ import { useAuth } from "../context/useAuth";
 import { useToast } from "../context/useToast";
 import type { Module, Lesson, Quiz, QuizQuestion } from "../types";
 import { normalizeQuiz, parseOptions } from "../utils/quiz";
+import SortableList from "../components/SortableList";
 
 type ModuleWithLessons = Module & {
   lessons: Lesson[];
   quiz?: Quiz | null;
+};
+
+/** Ordem para um item novo: depois do último da lista. */
+const nextOrder = (items: { order?: number | null }[]) => items.reduce((max, item) => Math.max(max, (item.order ?? 0) + 1), 0);
+
+/** Configurações do quiz no formulário (limite vazio = tentativas ilimitadas). */
+const readQuizSettings = (formData: FormData) => {
+  const rawLimit = (formData.get("maxAttempts") as string | null)?.trim();
+  return {
+    maxAttempts: rawLimit ? parseInt(rawLimit) : null,
+    shuffleQuestions: formData.get("shuffleQuestions") === "on",
+    shuffleOptions: formData.get("shuffleOptions") === "on",
+  };
 };
 
 const parseScore = (value: FormDataEntryValue | null, fallback: number): number => {
@@ -112,7 +126,7 @@ export default function CourseContentPage() {
     const formData = new FormData(e.currentTarget);
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
-    const order = parseScore(formData.get("order"), modules.length);
+    const order = nextOrder(modules);
 
     try {
       await api.post("/modules", {
@@ -157,13 +171,11 @@ export default function CourseContentPage() {
     const formData = new FormData(e.currentTarget);
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
-    const order = parseScore(formData.get("order"), editingModule.order ?? 0);
 
     try {
       await api.put(`/modules/${editingModule.id}`, {
         title,
         description,
-        order,
       });
       
       setEditingModule(null);
@@ -195,7 +207,7 @@ export default function CourseContentPage() {
     const description = formData.get("description") as string;
     const videoUrl = formData.get("videoUrl") as string;
     const durationMinutes = parseInt(formData.get("durationMinutes") as string) || 0;
-    const order = parseInt(formData.get("order") as string) || 0;
+    const order = nextOrder(modules.find((module) => module.id === selectedModuleId)?.lessons ?? []);
 
     try {
       await api.post("/lessons", {
@@ -246,7 +258,6 @@ export default function CourseContentPage() {
     const description = formData.get("description") as string;
     const videoUrl = formData.get("videoUrl") as string;
     const durationMinutes = parseInt(formData.get("durationMinutes") as string) || 0;
-    const order = parseInt(formData.get("order") as string) || 0;
 
     try {
       await api.put(`/lessons/${editingLesson.id}`, {
@@ -254,7 +265,6 @@ export default function CourseContentPage() {
         description,
         videoUrl,
         durationMinutes,
-        order,
       });
       
       setEditingLesson(null);
@@ -270,6 +280,30 @@ export default function CourseContentPage() {
       }
     } catch (err) {
       showToast(getErrorMessage(err, "Erro ao atualizar aula"), "error");
+    }
+  };
+
+  // Reordenação otimista: a lista muda na hora e volta ao estado anterior se a API recusar.
+  const handleReorderModules = async (reordered: ModuleWithLessons[]) => {
+    if (!id) return;
+    const previous = modules;
+    setModules(reordered);
+    try {
+      await api.put("/modules/reorder", { courseId: id, moduleIds: reordered.map((module) => module.id) });
+    } catch (err) {
+      setModules(previous);
+      showToast(getErrorMessage(err, "Erro ao reordenar módulos"), "error");
+    }
+  };
+
+  const handleReorderLessons = async (moduleId: string, reordered: Lesson[]) => {
+    const previous = modules;
+    setModules((current) => current.map((module) => (module.id === moduleId ? { ...module, lessons: reordered } : module)));
+    try {
+      await api.put("/lessons/reorder", { moduleId, lessonIds: reordered.map((lesson) => lesson.id) });
+    } catch (err) {
+      setModules(previous);
+      showToast(getErrorMessage(err, "Erro ao reordenar aulas"), "error");
     }
   };
 
@@ -318,6 +352,7 @@ export default function CourseContentPage() {
         title,
         description,
         passingScore,
+        ...readQuizSettings(formData),
       });
       const quizRes = await api.get<Quiz>(`/quizzes/module/${selectedQuizModuleId}`);
       const quizData = normalizeQuiz(quizRes.data);
@@ -342,6 +377,7 @@ export default function CourseContentPage() {
         title,
         description,
         passingScore,
+        ...readQuizSettings(formData),
       });
       showToast("Quiz atualizado com sucesso!", "success");
       setShowQuizForm(false);
@@ -391,6 +427,7 @@ export default function CourseContentPage() {
         question,
         options,
         correctAnswer,
+        explanation: (formData.get("explanation") as string) || null,
         order,
       });
       showToast("Questão criada com sucesso!", "success");
@@ -437,6 +474,7 @@ export default function CourseContentPage() {
         question,
         options,
         correctAnswer,
+        explanation: (formData.get("explanation") as string) || null,
         order,
       });
       showToast("Questão atualizada com sucesso!", "success");
@@ -557,15 +595,7 @@ export default function CourseContentPage() {
                 rows={3}
               />
             </div>
-            <div className="form-group">
-              <label>Ordem</label>
-              <input 
-                name="order" 
-                type="number" 
-                defaultValue={modules.length} 
-              />
-            </div>
-            <div className="form-actions">
+<div className="form-actions">
               <button 
                 type="button" 
                 onClick={() => {
@@ -622,16 +652,7 @@ export default function CourseContentPage() {
                   defaultValue={0} 
                 />
               </div>
-              <div className="form-group">
-                <label>Ordem</label>
-                <input 
-                  name="order" 
-                  type="number" 
-                  min="0" 
-                  defaultValue={0} 
-                />
-              </div>
-            </div>
+</div>
             <div className="form-actions">
               <button 
                 type="button" 
@@ -654,7 +675,8 @@ export default function CourseContentPage() {
       {showQuizForm && (
         <div className="form-card">
           <h3>{editingQuiz ? "Editar Quiz" : "Criar Quiz"}</h3>
-          <form 
+          <form
+            key={editingQuiz?.id ?? "new-quiz"}
             ref={quizFormRef} 
             onSubmit={editingQuiz ? handleEditQuiz : handleCreateQuiz}
           >
@@ -683,6 +705,28 @@ export default function CourseContentPage() {
                 max="100" 
                 defaultValue={editingQuiz?.passingScore ?? 70}
               />
+            </div>
+            <div className="form-group">
+              <label>Limite de tentativas por aluno</label>
+              <input
+                name="maxAttempts"
+                type="number"
+                min="1"
+                max="100"
+                placeholder="Ilimitado"
+                defaultValue={editingQuiz?.maxAttempts ?? ""}
+              />
+              <small className="form-hint">Deixe em branco para permitir tentativas ilimitadas.</small>
+            </div>
+            <div className="form-group">
+              <label>
+                <input name="shuffleQuestions" type="checkbox" defaultChecked={editingQuiz?.shuffleQuestions ?? false} />{" "}
+                Embaralhar a ordem das questões
+              </label>
+              <label>
+                <input name="shuffleOptions" type="checkbox" defaultChecked={editingQuiz?.shuffleOptions ?? false} />{" "}
+                Embaralhar a ordem das alternativas
+              </label>
             </div>
             <div className="form-actions">
               <button 
@@ -852,6 +896,16 @@ export default function CourseContentPage() {
               <small className="form-hint">Selecione qual opção é a resposta correta</small>
             </div>
             <div className="form-group">
+              <label>Explicação da resposta</label>
+              <textarea
+                name="explanation"
+                rows={2}
+                maxLength={2000}
+                placeholder="Exibida ao aluno após o envio (quando aprovado ou sem tentativas restantes)"
+                defaultValue={editingQuestion?.explanation ?? ""}
+              />
+            </div>
+            <div className="form-group">
               <label>Ordem</label>
               <input 
                 name="order" 
@@ -886,8 +940,16 @@ export default function CourseContentPage() {
             <p>Nenhum módulo criado ainda. Crie o primeiro módulo!</p>
           </div>
         ) : (
-          modules.map((module) => (
-            <div key={module.id} className="module-card">
+          <SortableList
+            items={modules}
+            getId={(module) => module.id}
+            getLabel={(module) => module.title}
+            onReorder={handleReorderModules}
+            disabled={!!editingModule || !!editingLesson}
+            itemClassName={() => "module-card"}
+          >
+            {(module, moduleHandle) => (
+            <>
               {editingModule?.id === module.id ? (
                 <div className="form-card inline-form">
                     <h3>Editar Módulo</h3>
@@ -908,15 +970,7 @@ export default function CourseContentPage() {
                         defaultValue={editingModule.description || ""}
                       />
                     </div>
-                    <div className="form-group">
-                      <label>Ordem</label>
-                      <input 
-                        name="order" 
-                        type="number" 
-                        defaultValue={editingModule.order ?? 0} 
-                      />
-                    </div>
-                    <div className="form-actions">
+<div className="form-actions">
                       <button 
                         type="button" 
                         onClick={() => {
@@ -936,9 +990,12 @@ export default function CourseContentPage() {
               ) : (
                 <>
                   <div className="module-header">
-                    <div>
-                      <h3>{module.title}</h3>
-                      {module.description && <p className="muted">{module.description}</p>}
+                    <div className="sortable-title">
+                      {moduleHandle}
+                      <div>
+                        <h3>{module.title}</h3>
+                        {module.description && <p className="muted">{module.description}</p>}
+                      </div>
                     </div>
                     <div className="module-actions">
                       <button
@@ -975,13 +1032,19 @@ export default function CourseContentPage() {
                     {module.lessons?.length === 0 ? (
                       <p className="muted">Nenhuma aula ainda</p>
                     ) : (
-                      module.lessons?.map((lesson) => {
+                      <SortableList
+                        items={module.lessons ?? []}
+                        getId={(lesson) => lesson.id}
+                        getLabel={(lesson) => lesson.title}
+                        onReorder={(reordered) => handleReorderLessons(module.id, reordered)}
+                        disabled={!!editingModule || !!editingLesson}
+                        className="sortable-lessons"
+                        itemClassName={(lesson) => `lesson-item${editingLesson?.id === lesson.id ? " editing" : ""}`}
+                      >
+                        {(lesson, lessonHandle) => {
                         const isEditingThisLesson = editingLesson?.id === lesson.id;
                         return (
-                          <div
-                            key={lesson.id}
-                            className={`lesson-item${isEditingThisLesson ? " editing" : ""}`}
-                          >
+                          <>
                             {isEditingThisLesson ? (
                             <div className="form-card inline-form lesson-form">
                               <h4>Editar Aula</h4>
@@ -1021,16 +1084,7 @@ export default function CourseContentPage() {
                                       defaultValue={editingLesson.durationMinutes || 0} 
                                     />
                                   </div>
-                                  <div className="form-group">
-                                    <label>Ordem</label>
-                                    <input 
-                                      name="order" 
-                                      type="number" 
-                                      min="0" 
-                                      defaultValue={editingLesson.order || 0} 
-                                    />
-                                  </div>
-                                </div>
+</div>
                                 <div className="form-actions">
                                   <button 
                                     type="button" 
@@ -1051,6 +1105,7 @@ export default function CourseContentPage() {
                             </div>
                           ) : (
                             <>
+                              {lessonHandle}
                               <div className="lesson-info">
                                 <strong>{lesson.title}</strong>
                                 {lesson.description && <p className="muted">{lesson.description}</p>}
@@ -1075,15 +1130,17 @@ export default function CourseContentPage() {
                               </div>
                             </>
                           )}
-                          </div>
+                          </>
                         );
-                      })
+                      }}
+                      </SortableList>
                     )}
                   </div>
                 </>
               )}
-            </div>
-          ))
+            </>
+            )}
+          </SortableList>
         )}
       </div>
     </div>

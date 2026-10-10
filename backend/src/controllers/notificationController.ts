@@ -18,6 +18,22 @@ export class NotificationController {
     }
   }
 
+  async getEmailPreferences(req: Request, res: Response): Promise<void> {
+    try {
+      res.json(await notificationService.getEmailPreferences(req.user!.userId));
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
+
+  async updateEmailPreferences(req: Request, res: Response): Promise<void> {
+    try {
+      res.json(await notificationService.updateEmailPreferences(req.user!.userId, req.body.email));
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
+
   async markAsRead(req: Request, res: Response): Promise<void> {
     try {
       const userId = req.user!.userId;

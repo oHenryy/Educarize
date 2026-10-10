@@ -69,7 +69,8 @@ export class ReviewService {
         review.course.instructorId,
         "Nova avaliação no seu curso",
         `Seu curso "${review.course.title}" recebeu uma nova avaliação de ${rating} estrelas${comment ? " com comentário" : ""}.`,
-        "INFO"
+        "INFO",
+        "REVIEW"
       ).catch(err => console.error("Erro ao criar notificação para instrutor:", err));
     }
 

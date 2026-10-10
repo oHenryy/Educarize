@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../context/useAuth";
+import EmailPreferences from "../components/EmailPreferences";
 
 export default function ProfilePage() {
   const { user } = useAuth();
@@ -102,6 +103,8 @@ export default function ProfilePage() {
             </button>
           </form>
         </div>
+
+        <EmailPreferences />
       </div>
     </div>
   );

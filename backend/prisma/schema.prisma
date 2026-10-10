@@ -35,6 +35,8 @@ model User {
   learningPathEnrollments LearningPathEnrollment[] @relation("LearningPathEnrollments")
   refreshTokens           RefreshToken[]
   authTokens              AuthToken[]
+  notificationPreferences NotificationPreference[]
+  uploadedFiles           StoredFile[]
 }
 
 /// Sessão de login: guarda apenas o hash do refresh token (rotacionado a cada uso).
@@ -74,31 +76,37 @@ model CourseCategory {
 }
 
 model Course {
-  id            String               @id @default(cuid())
-  title         String
-  description   String?
-  coverImageUrl String?
+  id                           String               @id @default(cuid())
+  title                        String
+  description                  String?
+  coverImageUrl                String?
   /// Carga horária em horas
-  durationHours Int                  @default(0)
-  difficulty    Difficulty           @default(BEGINNER)
-  status        CourseStatus         @default(DRAFT)
-  instructorId  String
-  categoryId    String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
-  certificates  Certificate[]
-  category      CourseCategory?      @relation(fields: [categoryId], references: [id])
-  instructor    User                 @relation("CourseInstructor", fields: [instructorId], references: [id])
-  reviews       CourseReview[]
-  tags          CourseTag[]
-  enrollments   Enrollment[]
-  favorites     Favorite[]
-  modules       Module[]
-  learningPaths LearningPathCourse[]
+  durationHours                Int                  @default(0)
+  difficulty                   Difficulty           @default(BEGINNER)
+  status                       CourseStatus         @default(DRAFT)
+  /// Se verdadeiro, o certificado só é emitido após aprovação em todos os quizzes do curso
+  requireQuizzesForCertificate Boolean              @default(false)
+  instructorId                 String
+  categoryId                   String?
+  createdAt                    DateTime             @default(now())
+  updatedAt                    DateTime             @updatedAt
+  certificates                 Certificate[]
+  category                     CourseCategory?      @relation(fields: [categoryId], references: [id])
+  instructor                   User                 @relation("CourseInstructor", fields: [instructorId], references: [id])
+  reviews                      CourseReview[]
+  tags                         CourseTag[]
+  enrollments                  Enrollment[]
+  favorites                    Favorite[]
+  modules                      Module[]
+  learningPaths                LearningPathCourse[]
+
+  /// Busca textual (gerada pelo banco a partir de título e descrição, sem acentos)
+  searchVector Unsupported("tsvector")?
 
   @@index([instructorId])
   @@index([categoryId])
   @@index([status, createdAt])
+  @@index([searchVector], type: Gin)
 }
 
 model Module {
@@ -134,11 +142,15 @@ model Lesson {
   notes           Note[]
   progress        UserProgress[]
 
+  /// Busca textual (gerada pelo banco a partir de título e descrição, sem acentos)
+  searchVector Unsupported("tsvector")?
+
   @@index([moduleId])
+  @@index([searchVector], type: Gin)
 }
 
 model LessonAttachment {
-  id            String   @id @default(cuid())
+  id            String      @id @default(cuid())
   name          String
   /// Descrição do material
   description   String?
@@ -150,18 +162,44 @@ model LessonAttachment {
   /// 'EXERCISE' | 'REFERENCE' | 'TEMPLATE' | 'SLIDES' | 'CODE' | 'OTHER'
   category      String?
   /// Ordem de exibição
-  order         Int      @default(0)
+  order         Int         @default(0)
   /// URL da miniatura/preview
   thumbnailUrl  String?
   /// Contador de downloads
-  downloadCount Int      @default(0)
+  downloadCount Int         @default(0)
   lessonId      String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  lesson        Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  /// Arquivo enviado ao Educarize (vazio quando o anexo é um link externo)
+  fileId        String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  lesson        Lesson      @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  file          StoredFile? @relation(fields: [fileId], references: [id], onDelete: SetNull)
 
   @@index([lessonId])
   @@index([category])
+  @@index([fileId])
+}
+
+enum FilePurpose {
+  COVER
+  ATTACHMENT
+}
+
+/// Arquivo enviado (capa de curso ou material de aula). O conteúdo fica no storage (disco ou S3).
+model StoredFile {
+  id           String             @id @default(cuid())
+  /// Chave no storage, ex.: "covers/<id>.png"
+  key          String             @unique
+  purpose      FilePurpose
+  originalName String
+  mimeType     String
+  size         Int
+  ownerId      String?
+  createdAt    DateTime           @default(now())
+  owner        User?              @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  attachments  LessonAttachment[]
+
+  @@index([ownerId])
 }
 
 model Enrollment {
@@ -179,16 +217,22 @@ model Enrollment {
 }
 
 model UserProgress {
-  id          String    @id @default(cuid())
-  userId      String
-  lessonId    String
+  id                   String    @id @default(cuid())
+  userId               String
+  lessonId             String
   /// Se a aula foi marcada como concluída
-  completed   Boolean   @default(false)
-  completedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  completed            Boolean   @default(false)
+  completedAt          DateTime?
+  /// Tempo efetivamente assistido (segundos com o vídeo tocando; pular trechos não conta)
+  watchedSeconds       Int       @default(0)
+  /// Última posição do vídeo, para retomar de onde parou
+  lastPositionSeconds  Int       @default(0)
+  /// Duração do vídeo informada pelo player
+  videoDurationSeconds Int?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  lesson               Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, lessonId])
   @@index([userId])
@@ -197,17 +241,21 @@ model UserProgress {
 }
 
 model Quiz {
-  id           String         @id @default(cuid())
-  title        String
-  description  String?
+  id               String         @id @default(cuid())
+  title            String
+  description      String?
   /// Nota mínima para aprovação (0-100)
-  passingScore Int            @default(70)
-  moduleId     String         @unique
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  module       Module         @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-  attempts     QuizAttempt[]
-  questions    QuizQuestion[]
+  passingScore     Int            @default(70)
+  /// Limite de tentativas por aluno (nulo = ilimitado)
+  maxAttempts      Int?
+  shuffleQuestions Boolean        @default(false)
+  shuffleOptions   Boolean        @default(false)
+  moduleId         String         @unique
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  module           Module         @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  attempts         QuizAttempt[]
+  questions        QuizQuestion[]
 }
 
 model QuizQuestion {
@@ -218,6 +266,8 @@ model QuizQuestion {
   options       Json
   /// Índice da resposta correta (0-based)
   correctAnswer Int
+  /// Explicação exibida após o envio (quando o aluno é aprovado ou esgota as tentativas)
+  explanation   String?
   order         Int          @default(0)
   quizId        String
   createdAt     DateTime     @default(now())
@@ -275,6 +325,8 @@ model Certificate {
   courseDurationHours Int      @default(0)
   instructorName      String
   studentName         String
+  /// Código público para conferir a autenticidade (impresso no PDF, com QR code)
+  verificationCode    String   @unique
   issuedAt            DateTime @default(now())
   course              Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -373,14 +425,16 @@ model CourseReview {
 }
 
 model Notification {
-  id        String           @id @default(cuid())
+  id        String               @id @default(cuid())
   title     String
   message   String
   type      NotificationType
-  read      Boolean          @default(false)
+  /// Assunto da notificação (usado nas preferências de e-mail)
+  category  NotificationCategory @default(GENERAL)
+  read      Boolean              @default(false)
   userId    String
-  createdAt DateTime         @default(now())
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime             @default(now())
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([read])
@@ -491,6 +545,28 @@ enum NotificationType {
   SUCCESS
   WARNING
   ERROR
+}
+
+enum NotificationCategory {
+  GENERAL
+  ENROLLMENT
+  PROGRESS
+  QUIZ
+  CERTIFICATE
+  COMMENT
+  REVIEW
+  MESSAGE
+}
+
+/// Escolha do usuário sobre receber por e-mail as notificações de uma categoria.
+/// Sem registro, vale o padrão da categoria (definido no NotificationService).
+model NotificationPreference {
+  userId   String
+  category NotificationCategory
+  email    Boolean
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, category])
 }
 
 enum QuestionType {

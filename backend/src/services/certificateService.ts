@@ -5,12 +5,76 @@ import * as path from "path";
 import { logActivity } from "../utils/activityLogger";
 import { HttpError } from "../utils/httpError";
 import { config } from "../config/env";
+import crypto from "crypto";
+import QRCode from "qrcode";
+import { Readable } from "stream";
+import { storage } from "../storage/fileStorage";
 
-const CERTS_DIR = path.resolve(process.cwd(), config.certificatesDir);
+/** Sem caracteres ambíguos (0/O, 1/I/L): o código pode ser digitado a partir do papel. */
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
-/** Resolve o caminho do PDF a partir da URL salva, sem permitir sair da pasta de certificados. */
-export function getCertificateFilePath(pdfUrl: string): string {
-  return path.join(CERTS_DIR, path.basename(pdfUrl));
+function generateVerificationCode(): string {
+  return Array.from({ length: 12 }, () => CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)]).join("");
+}
+
+/** Exibição em blocos: ABCD-EFGH-JKMN. */
+export const formatVerificationCode = (code: string) => code.match(/.{1,4}/g)!.join("-");
+
+/** Aceita o código com ou sem hífens/espaços e em qualquer caixa. */
+const normalizeVerificationCode = (input: string) => input.replace(/[\s-]/g, "").toUpperCase();
+
+export const verificationUrl = (code: string) =>
+  `${config.frontendUrl}/certificates/verify/${formatVerificationCode(code)}`;
+
+/** Pasta onde os PDFs eram gravados antes do storage (ainda lida para certificados antigos). */
+const LEGACY_CERTS_DIR = path.resolve(process.cwd(), config.certificatesDir);
+
+/** Chave do PDF no storage a partir da URL salva (só o nome do arquivo é usado). */
+const certificateKey = (pdfUrl: string) => `certificates/${path.basename(pdfUrl)}`;
+const legacyCertificatePath = (pdfUrl: string) => path.join(LEGACY_CERTS_DIR, path.basename(pdfUrl));
+
+/** Conteúdo do PDF do certificado, ou null se o arquivo não existir mais. */
+export async function openCertificatePdf(pdfUrl: string): Promise<Readable | null> {
+  const stored = await storage.get(certificateKey(pdfUrl));
+  if (stored) return stored;
+  const legacy = legacyCertificatePath(pdfUrl);
+  return fs.existsSync(legacy) ? fs.createReadStream(legacy) : null;
+}
+
+async function certificatePdfExists(pdfUrl: string): Promise<boolean> {
+  return (await storage.exists(certificateKey(pdfUrl))) || fs.existsSync(legacyCertificatePath(pdfUrl));
+}
+
+/** Gera o PDF inteiro em memória (um certificado tem poucos KB). */
+function renderPdf(doc: PDFKit.PDFDocument): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+  });
+}
+
+/**
+ * Quizzes ainda não aprovados pelo aluno em um curso que exige aprovação para o certificado.
+ * Retorna lista vazia se o curso não exige quizzes.
+ */
+export async function pendingQuizzesForCertificate(userId: string, courseId: string) {
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { requireQuizzesForCertificate: true },
+  });
+  if (!course?.requireQuizzesForCertificate) return [];
+
+  return prisma.quiz.findMany({
+    where: {
+      module: { courseId },
+      questions: { some: {} },
+      attempts: { none: { userId, passed: true } },
+    },
+    select: { id: true, title: true, moduleId: true },
+    orderBy: { module: { order: "asc" } },
+  });
 }
 
 export class CertificateService {
@@ -53,30 +117,35 @@ export class CertificateService {
       throw new HttpError(400, "Curso não foi completado (100% de progresso necessário)");
     }
 
+    const pendingQuizzes = await pendingQuizzesForCertificate(userId, courseId);
+    if (pendingQuizzes.length > 0) {
+      throw new HttpError(
+        400,
+        `Para obter o certificado, seja aprovado nos quizzes: ${pendingQuizzes.map((q) => q.title).join(", ")}.`
+      );
+    }
+
     const existing = await prisma.certificate.findUnique({
       where: { userId_courseId: { userId, courseId } },
     });
 
     // Certificado já emitido e com arquivo íntegro: não regera.
-    if (existing && fs.existsSync(getCertificateFilePath(existing.pdfUrl))) {
+    if (existing && (await certificatePdfExists(existing.pdfUrl))) {
       return existing;
     }
 
-    const certsDir = CERTS_DIR;
-    if (!fs.existsSync(certsDir)) {
-      fs.mkdirSync(certsDir, { recursive: true });
-    }
+    // Ao regerar o PDF de um certificado existente, o código (e o QR já impresso) continua o mesmo.
+    const verificationCode = existing?.verificationCode ?? generateVerificationCode();
+    const qrCode = await QRCode.toBuffer(verificationUrl(verificationCode), { margin: 1, width: 240 });
 
     const fileName = `certificate_${userId}_${courseId}_${Date.now()}.pdf`;
-    const filePath = path.join(certsDir, fileName);
-    const writeStream = fs.createWriteStream(filePath);
     const doc = new PDFDocument({
       size: "A4",
       layout: "landscape",
       margins: { top: 50, bottom: 50, left: 50, right: 50 },
     });
 
-    doc.pipe(writeStream);
+    const rendered = renderPdf(doc);
 
     const pageWidth = 742;
     const pageHeight = 495;
@@ -145,22 +214,21 @@ export class CertificateService {
     doc.text("Educarize LMS", 522, 440, { width: 200, align: "center" });
     doc.text("Plataforma", 522, 460, { width: 200, align: "center" });
 
+    // QR code entre as assinaturas, apontando para a página pública de verificação.
+    doc.image(qrCode, 386, 405, { width: 70 });
+
     doc
-      .fillColor("#9ca3af")
+      .fillColor("#6b7280")
       .fontSize(8)
       .text(
-        `Certificado ID: ${userId.substring(0, 8)}-${courseId.substring(0, 8)}`,
+        `Código de verificação: ${formatVerificationCode(verificationCode)}  •  Confira em ${verificationUrl(verificationCode)}`,
         50,
-        510,
+        505,
         { width: pageWidth, align: "center" }
       );
 
     doc.end();
-
-    await new Promise<void>((resolve, reject) => {
-      writeStream.on("finish", resolve);
-      writeStream.on("error", reject);
-    });
+    await storage.put(certificateKey(fileName), await rendered, "application/pdf");
 
     const pdfUrl = `/certificates/file/${fileName}`;
 
@@ -180,6 +248,7 @@ export class CertificateService {
             userId,
             courseId,
             pdfUrl,
+            verificationCode,
             ...snapshot,
           },
         });
@@ -196,7 +265,7 @@ export class CertificateService {
   }
 
   async getMyCertificates(userId: string) {
-    return await prisma.certificate.findMany({
+    const certificates = await prisma.certificate.findMany({
       where: { userId },
       include: {
         course: {
@@ -215,6 +284,28 @@ export class CertificateService {
       },
       orderBy: { issuedAt: "desc" },
     });
+    return certificates.map((c) => ({ ...c, verificationCode: formatVerificationCode(c.verificationCode) }));
+  }
+
+  /** Consulta pública: confirma a autenticidade sem expor dados pessoais além do nome impresso no certificado. */
+  async verify(code: string) {
+    const certificate = await prisma.certificate.findUnique({
+      where: { verificationCode: normalizeVerificationCode(code) },
+      select: {
+        verificationCode: true,
+        studentName: true,
+        courseTitle: true,
+        courseDurationHours: true,
+        instructorName: true,
+        issuedAt: true,
+      },
+    });
+
+    if (!certificate) {
+      throw new HttpError(404, "Certificado não encontrado. Confira o código digitado.");
+    }
+
+    return { ...certificate, verificationCode: formatVerificationCode(certificate.verificationCode), valid: true };
   }
 
   async getCertificateById(certificateId: string, userId: string) {
@@ -274,7 +365,9 @@ export class CertificateService {
         }),
       ]);
 
+      // Requisitos ainda não cumpridos (aulas ou quizzes obrigatórios): não é um erro, só não emite ainda.
       if (totalLessons > 0 && completedLessons >= totalLessons) {
+        if ((await pendingQuizzesForCertificate(userId, courseId)).length > 0) return null;
         const certificate = await this.generateCertificate(userId, courseId);
         return certificate.pdfUrl;
       }
@@ -299,10 +392,8 @@ export class CertificateService {
       throw new HttpError(403, "Você não tem permissão para deletar este certificado");
     }
 
-    const filePath = getCertificateFilePath(certificate.pdfUrl);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
+    await storage.delete(certificateKey(certificate.pdfUrl));
+    fs.rmSync(legacyCertificatePath(certificate.pdfUrl), { force: true });
 
     await prisma.certificate.delete({
       where: { id: certificateId },

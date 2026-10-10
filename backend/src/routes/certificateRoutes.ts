@@ -1,10 +1,13 @@
 import { Router } from "express";
 import { certificateController } from "../controllers/certificateController";
-import { authenticate } from "../middleware/authMiddleware";
+import { authenticate, rateLimit } from "../middleware/authMiddleware";
 import { validate } from "../validation/validate";
 import * as s from "../validation/schemas";
 
 const router = Router();
+
+// Pública: qualquer pessoa pode conferir um certificado pelo código impresso (limite contra varredura de códigos).
+router.get("/verify/:code", rateLimit(60, 60 * 1000), (req, res) => certificateController.verify(req, res));
 
 router.use(authenticate);
 

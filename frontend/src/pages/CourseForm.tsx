@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
+import FilePicker from "../components/FilePicker";
 import { useAuth } from "../context/useAuth";
 import type { CourseCategory } from "../types";
 import { useToast } from "../context/useToast";
@@ -13,6 +14,7 @@ type CourseFormData = {
   difficulty: string;
   categoryId: string;
   status: string;
+  requireQuizzesForCertificate: boolean;
 };
 
 export default function CourseFormPage() {
@@ -30,6 +32,7 @@ export default function CourseFormPage() {
     difficulty: "BEGINNER",
     categoryId: "",
     status: "DRAFT",
+    requireQuizzesForCertificate: false,
   });
 
   const [categories, setCategories] = useState<CourseCategory[]>([]);
@@ -50,6 +53,7 @@ export default function CourseFormPage() {
       difficulty: "BEGINNER",
       categoryId: "",
       status: "DRAFT",
+      requireQuizzesForCertificate: false,
     });
     setError(null);
     setLoading(false);
@@ -83,6 +87,7 @@ export default function CourseFormPage() {
             difficulty: course.difficulty || "BEGINNER",
             categoryId: course.categoryId || "",
             status: course.status || "DRAFT",
+            requireQuizzesForCertificate: !!course.requireQuizzesForCertificate,
           });
           setOriginalStatus(course.status || "DRAFT");
         }
@@ -170,6 +175,14 @@ export default function CourseFormPage() {
               onChange={(e) => setFormData({ ...formData, coverImageUrl: e.target.value })}
               placeholder="https://exemplo.com/imagem.jpg"
             />
+            <FilePicker
+              purpose="cover"
+              label="Enviar imagem"
+              onUploaded={(file) => setFormData((current) => ({ ...current, coverImageUrl: file.url }))}
+            />
+            {formData.coverImageUrl && (
+              <img src={formData.coverImageUrl} alt="Pré-visualização da capa" className="cover-preview" />
+            )}
           </div>
 
           <div className="form-group">
@@ -213,6 +226,18 @@ export default function CourseFormPage() {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="requireQuizzesForCertificate">
+            <input
+              id="requireQuizzesForCertificate"
+              type="checkbox"
+              checked={formData.requireQuizzesForCertificate}
+              onChange={(e) => setFormData({ ...formData, requireQuizzesForCertificate: e.target.checked })}
+            />{" "}
+            Exigir aprovação em todos os quizzes para emitir o certificado
+          </label>
         </div>
 
         {isEdit && (

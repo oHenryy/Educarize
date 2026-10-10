@@ -379,7 +379,8 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
             name: "search", 
             in: "query", 
             schema: { type: "string" },
-            description: "Buscar por título ou descrição",
+            description:
+              "Busca textual no título e na descrição: sem diferenciar acentos e maiúsculas, aceita prefixos (\"progra\") e palavras flexionadas. Com busca, os resultados vêm ordenados por relevância.",
             example: "JavaScript"
           },
           { name: "instructorId", in: "query", schema: { type: "string" }, description: "Filtrar por instrutor" },
@@ -435,7 +436,8 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
                   coverImageUrl: { type: "string" },
                   durationHours: { type: "integer" },
                   difficulty: { type: "string", enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"] },
-                  categoryId: { type: "string" }
+                  categoryId: { type: "string" },
+                  requireQuizzesForCertificate: { type: "boolean", description: "Exigir aprovação nos quizzes para emitir o certificado" }
                 },
                 required: ["title"]
               }
@@ -476,6 +478,7 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
                   durationHours: { type: "integer" },
                   difficulty: { type: "string" },
                   categoryId: { type: "string" },
+                  requireQuizzesForCertificate: { type: "boolean" },
                   status: { type: "string", enum: ["DRAFT", "PUBLISHED", "ARCHIVED", "SUSPENDED"] }
                 }
               }
@@ -548,6 +551,34 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
         }
       }
     },
+    "/modules/reorder": {
+      put: {
+        tags: ["Módulos"],
+        summary: "Reordenar os módulos de um curso",
+        description: "Envia todos os módulos na nova ordem; a ordem passa a ser a posição na lista. A lista deve conter exatamente os módulos atuais.",
+        security: [{ cookieAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  courseId: { type: "string" },
+                  moduleIds: { type: "array", items: { type: "string" }, maxItems: 500 }
+                },
+                required: ["courseId", "moduleIds"]
+              }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Lista na nova ordem" },
+          "400": { description: "A lista não corresponde aos módulos atuais" },
+          "403": { description: "Sem permissão" }
+        }
+      }
+    },
     "/modules/{id}": {
       put: {
         tags: ["Módulos"],
@@ -590,6 +621,34 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
         parameters: [{ name: "moduleId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Lista de aulas" }
+        }
+      }
+    },
+    "/lessons/reorder": {
+      put: {
+        tags: ["Aulas"],
+        summary: "Reordenar as aulas de um módulo",
+        description: "Envia todos os aulas na nova ordem; a ordem passa a ser a posição na lista. A lista deve conter exatamente os aulas atuais.",
+        security: [{ cookieAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  moduleId: { type: "string" },
+                  lessonIds: { type: "array", items: { type: "string" }, maxItems: 500 }
+                },
+                required: ["moduleId", "lessonIds"]
+              }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Lista na nova ordem" },
+          "400": { description: "A lista não corresponde aos aulas atuais" },
+          "403": { description: "Sem permissão" }
         }
       }
     },
@@ -721,11 +780,43 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
       get: {
         tags: ["Progresso"],
         summary: "Obter progresso de um curso",
+        description: "Inclui pendingQuizzes: quizzes ainda não aprovados quando o curso os exige para o certificado.",
         security: [{ cookieAuth: [] }],
         parameters: [{ name: "courseId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           "200": { description: "Progresso do curso" },
           "401": { description: "Não autenticado" }
+        }
+      }
+    },
+    "/progress/video": {
+      post: {
+        tags: ["Progresso"],
+        summary: "Registrar o andamento do vídeo de uma aula",
+        description:
+          "Enviado periodicamente pelo player. Soma o tempo efetivamente assistido (até a duração do vídeo) e guarda a posição para retomar. Ao chegar a 90% da duração assistida, a aula é concluída automaticamente.",
+        security: [{ cookieAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  lessonId: { type: "string" },
+                  positionSeconds: { type: "integer", minimum: 0, maximum: 86400 },
+                  durationSeconds: { type: "integer", minimum: 1, maximum: 86400 },
+                  watchedDeltaSeconds: { type: "integer", minimum: 0, maximum: 120, description: "Segundos assistidos desde o último envio" }
+                },
+                required: ["lessonId", "positionSeconds", "durationSeconds", "watchedDeltaSeconds"]
+              }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Progresso da aula (watchedSeconds, lastPositionSeconds, completed) e autoCompleted" },
+          "401": { description: "Não autenticado" },
+          "403": { description: "Não matriculado no curso" }
         }
       }
     },
@@ -822,6 +913,7 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
       get: {
         tags: ["Quizzes"],
         summary: "Obter quiz de um módulo",
+        description: "Para alunos, inclui attemptsUsed, attemptsRemaining e passed, sem gabarito nem explicações.",
         security: [{ cookieAuth: [] }],
         parameters: [{ name: "moduleId", in: "path", required: true, schema: { type: "string" } }],
         responses: {
@@ -855,8 +947,12 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
           }
         },
         responses: {
-          "200": { description: "Tentativa submetida" },
-          "401": { description: "Não autenticado" }
+          "200": {
+            description:
+              "Tentativa registrada. Retorna score, passed, attemptsUsed, attemptsRemaining, answersRevealed e results (acerto por questão; resposta correta e explicação só quando answersRevealed — aprovado ou sem tentativas restantes)."
+          },
+          "401": { description: "Não autenticado" },
+          "403": { description: "Limite de tentativas atingido" }
         }
       }
     },
@@ -887,7 +983,10 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
                   moduleId: { type: "string" },
                   title: { type: "string" },
                   description: { type: "string" },
-                  passingScore: { type: "integer" }
+                  passingScore: { type: "integer" },
+                  maxAttempts: { type: "integer", nullable: true, minimum: 1, maximum: 100, description: "Limite de tentativas por aluno (vazio = ilimitado)" },
+                  shuffleQuestions: { type: "boolean", description: "Embaralhar a ordem das questões" },
+                  shuffleOptions: { type: "boolean", description: "Embaralhar a ordem das alternativas" }
                 },
                 required: ["moduleId", "title", "passingScore"]
               }
@@ -914,7 +1013,10 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
                 properties: {
                   title: { type: "string" },
                   description: { type: "string" },
-                  passingScore: { type: "integer" }
+                  passingScore: { type: "integer" },
+                  maxAttempts: { type: "integer", nullable: true, minimum: 1, maximum: 100, description: "Limite de tentativas por aluno (vazio = ilimitado)" },
+                  shuffleQuestions: { type: "boolean", description: "Embaralhar a ordem das questões" },
+                  shuffleOptions: { type: "boolean", description: "Embaralhar a ordem das alternativas" }
                 }
               }
             }
@@ -953,6 +1055,7 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
                   type: { type: "string", enum: ["MULTIPLE_CHOICE"] },
                   options: { type: "array", items: { type: "string" } },
                   correctAnswer: { type: "integer" },
+                  explanation: { type: "string", description: "Explicação exibida após o aluno ser aprovado ou esgotar as tentativas" },
                   order: { type: "integer" }
                 },
                 required: ["quizId", "question", "options", "correctAnswer"]
@@ -982,6 +1085,7 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
                   question: { type: "string" },
                   options: { type: "array", items: { type: "string" } },
                   correctAnswer: { type: "integer" },
+                  explanation: { type: "string" },
                   order: { type: "integer" }
                 }
               }
@@ -1198,6 +1302,36 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
         responses: {
           "201": { description: "Categoria criada" },
           "403": { description: "Apenas ADMIN" }
+        }
+      }
+    },
+    "/certificates/verify/{code}": {
+      get: {
+        tags: ["Certificados"],
+        summary: "Verificar a autenticidade de um certificado (público)",
+        description: "Não exige login. Aceita o código com ou sem hífens, em qualquer caixa. Retorna apenas os dados impressos no certificado.",
+        parameters: [{ name: "code", in: "path", required: true, schema: { type: "string" }, example: "ABCD-EFGH-JKMN" }],
+        responses: {
+          "200": {
+            description: "Certificado autêntico",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    valid: { type: "boolean" },
+                    verificationCode: { type: "string" },
+                    studentName: { type: "string" },
+                    courseTitle: { type: "string" },
+                    courseDurationHours: { type: "integer" },
+                    instructorName: { type: "string" },
+                    issuedAt: { type: "string", format: "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { description: "Código não encontrado" }
         }
       }
     },
@@ -1816,6 +1950,65 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
         }
       }
     },
+    "/notifications/preferences": {
+      get: {
+        tags: ["Notificações"],
+        summary: "Preferências de notificação por e-mail",
+        description:
+          "Uma entrada por categoria. Sem escolha salva, vale o padrão: ligado para MESSAGE, COMMENT, CERTIFICATE e REVIEW; desligado para QUIZ, ENROLLMENT e PROGRESS. Os e-mails só são enviados para endereços confirmados; mensagens diretas, só se o destinatário não estiver conectado.",
+        security: [{ cookieAuth: [] }],
+        responses: {
+          "200": {
+            description: "Preferências",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      category: { type: "string", enum: ["MESSAGE", "COMMENT", "CERTIFICATE", "REVIEW", "QUIZ", "ENROLLMENT", "PROGRESS"] },
+                      email: { type: "boolean" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { description: "Não autenticado" }
+        }
+      },
+      put: {
+        tags: ["Notificações"],
+        summary: "Alterar preferências de notificação por e-mail",
+        description: "Altera só as categorias enviadas; as demais ficam como estão.",
+        security: [{ cookieAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  email: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: Object.fromEntries(["MESSAGE", "COMMENT", "CERTIFICATE", "REVIEW", "QUIZ", "ENROLLMENT", "PROGRESS"].map((c) => [c, { type: "boolean" }]))
+                  }
+                },
+                required: ["email"]
+              },
+              example: { email: { MESSAGE: false, PROGRESS: true } }
+            }
+          }
+        },
+        responses: {
+          "200": { description: "Preferências atualizadas (lista completa)" },
+          "400": { description: "Categoria desconhecida ou valor inválido" },
+          "401": { description: "Não autenticado" }
+        }
+      }
+    },
     "/notifications/{id}": {
       put: {
         tags: ["Notificações"],
@@ -2024,7 +2217,7 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
         tags: ["Busca"],
         summary: "Busca avançada de cursos",
         parameters: [
-          { name: "q", in: "query", schema: { type: "string" }, description: "Termo de busca" },
+          { name: "query", in: "query", schema: { type: "string" }, description: "Termo de busca (textual, sem acentos, ordenado por relevância)" },
           { name: "categoryId", in: "query", schema: { type: "string" } },
           { name: "difficulty", in: "query", schema: { type: "string", enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"] } },
           { name: "minRating", in: "query", schema: { type: "integer", minimum: 1, maximum: 5 } },
@@ -2372,6 +2565,68 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
         }
       }
     },
+    "/files": {
+      post: {
+        tags: ["Arquivos"],
+        summary: "Enviar arquivo (INSTRUCTOR/ADMIN)",
+        description:
+          "Multipart com os campos `purpose` (cover ou attachment) e `file`. Capas: PNG, JPEG, GIF ou WebP até 5 MB. Materiais: PDF, ZIP, imagens, documentos do Office/LibreOffice, TXT, CSV, MD, MP4, WebM e MP3 até 50 MB. O tipo é decidido pela extensão e conferido pela assinatura do arquivo; HTML, SVG e scripts são recusados. Os arquivos ficam em disco (UPLOAD_DIR) ou num storage compatível com S3 (S3_BUCKET).",
+        security: [{ cookieAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                properties: {
+                  purpose: { type: "string", enum: ["cover", "attachment"] },
+                  file: { type: "string", format: "binary" }
+                },
+                required: ["purpose", "file"]
+              }
+            }
+          }
+        },
+        responses: {
+          "201": {
+            description: "Arquivo enviado",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    url: { type: "string", description: "Use em coverImageUrl, ou envie o id como fileId de um anexo" },
+                    name: { type: "string" },
+                    mimeType: { type: "string" },
+                    size: { type: "integer" },
+                    fileType: { type: "string", enum: ["PDF", "ZIP", "IMAGE", "DOCUMENT", "VIDEO", "OTHER"] }
+                  }
+                }
+              }
+            }
+          },
+          "400": { description: "Tipo não permitido, arquivo vazio ou conteúdo que não corresponde à extensão" },
+          "403": { description: "Sem permissão" },
+          "413": { description: "Arquivo grande demais" }
+        }
+      }
+    },
+    "/files/{id}": {
+      get: {
+        tags: ["Arquivos"],
+        summary: "Baixar arquivo",
+        description:
+          "Capas são públicas. Materiais exigem login e acesso ao conteúdo do curso (dono, administrador ou aluno matriculado). Imagens abrem no navegador; os demais tipos são sempre baixados.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Conteúdo do arquivo" },
+          "401": { description: "Material: faça login" },
+          "403": { description: "Material: sem acesso ao curso" },
+          "404": { description: "Arquivo não encontrado" }
+        }
+      }
+    },
     "/messages": {
       post: {
         tags: ["Mensagens"],
@@ -2600,14 +2855,18 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
                 properties: {
                   name: { type: "string" },
                   description: { type: "string" },
-                  fileUrl: { type: "string" },
-                  fileType: { type: "string", enum: ["PDF", "ZIP", "VIDEO", "LINK", "DOCUMENT", "IMAGE", "OTHER"] },
+                  fileId: {
+                    type: "string",
+                    description: "Arquivo enviado por POST /files (purpose=attachment). Dispensa fileUrl, fileType e fileSize."
+                  },
+                  fileUrl: { type: "string", description: "Link externo (obrigatório sem fileId)" },
+                  fileType: { type: "string", enum: ["PDF", "ZIP", "VIDEO", "LINK", "DOCUMENT", "IMAGE", "OTHER"], description: "Obrigatório sem fileId" },
                   fileSize: { type: "integer", minimum: 0 },
                   category: { type: "string", enum: ["EXERCISE", "REFERENCE", "TEMPLATE", "SLIDES", "CODE", "OTHER"] },
                   order: { type: "integer", minimum: 0 },
                   thumbnailUrl: { type: "string" }
                 },
-                required: ["name", "fileUrl", "fileType"]
+                required: ["name"]
               }
             }
           }

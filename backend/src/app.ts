@@ -24,6 +24,7 @@ import instructorRoutes from "./routes/instructorRoutes";
 import searchRoutes from "./routes/searchRoutes";
 import learningPathRoutes from "./routes/learningPathRoutes";
 import messageRoutes from "./routes/messageRoutes";
+import fileRoutes from "./routes/fileRoutes";
 import { openApiSpec } from "./docs/openapi";
 import { config } from "./config/env";
 import { errorHandler } from "./utils/httpError";
@@ -68,6 +69,7 @@ app.use("/instructor", instructorRoutes);
 app.use("/search", searchRoutes);
 app.use("/learning-paths", learningPathRoutes);
 app.use("/messages", messageRoutes);
+app.use("/files", fileRoutes);
 
 app.use(
   "/docs",

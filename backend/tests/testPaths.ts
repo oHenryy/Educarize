@@ -20,4 +20,5 @@ export const testPaths = {
   schema,
   databaseUrl: withSchema(baseUrl, schema),
   certificates: path.join(root, "certificates"),
+  uploads: path.join(root, "uploads"),
 };

@@ -10,6 +10,7 @@ const progressController = new ProgressController();
 router.use(authenticate);
 
 router.post("/complete", validate({ body: s.lessonIdBody }), (req, res) => progressController.markCompleted(req, res));
+router.post("/video", validate({ body: s.videoProgressBody }), (req, res) => progressController.recordVideo(req, res));
 router.post("/incomplete", validate({ body: s.lessonIdBody }), (req, res) => progressController.markIncomplete(req, res));
 router.get("/course/:courseId", (req, res) => progressController.getCourseProgress(req, res));
 router.get("/lesson/:lessonId", (req, res) => progressController.getLessonProgress(req, res));

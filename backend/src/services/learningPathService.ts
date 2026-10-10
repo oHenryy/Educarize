@@ -4,6 +4,7 @@ import { NotificationService } from "./notificationService";
 import { Difficulty, LearningPathStatus } from "@prisma/client";
 import { HttpError } from "../utils/httpError";
 import { isEnumValue } from "../utils/enums";
+import { isSameIdSet } from "../utils";
 import { AuthUser } from "../utils/courseAccess";
 
 export interface CreateLearningPathData {
@@ -364,8 +365,7 @@ export class LearningPathService {
       throw new HttpError(403, "Sem permissão para reordenar cursos desta trilha");
     }
 
-    const current = new Set(learningPath.courses.map((c) => c.courseId));
-    if (courseIds.length !== current.size || !courseIds.every((id) => current.has(id))) {
+    if (!isSameIdSet(learningPath.courses.map((c) => c.courseId), courseIds)) {
       throw new HttpError(400, "A lista deve conter exatamente os cursos atuais da trilha");
     }
 
@@ -435,7 +435,8 @@ export class LearningPathService {
         userId,
         "Matrícula na trilha realizada!",
         `Você foi matriculado na trilha "${enrollment.learningPath.title}". Comece a estudar agora!`,
-        "SUCCESS"
+        "SUCCESS",
+        "ENROLLMENT"
       )
       .catch((err) => console.error("Erro ao criar notificação:", err));
 
@@ -445,7 +446,8 @@ export class LearningPathService {
           enrollment.learningPath.instructorId,
           "Novo aluno na sua trilha",
           `Um novo aluno se matriculou na sua trilha "${enrollment.learningPath.title}".`,
-          "INFO"
+          "INFO",
+          "ENROLLMENT"
         )
         .catch((err) => console.error("Erro ao criar notificação para instrutor:", err));
     }
@@ -556,7 +558,8 @@ export class LearningPathService {
             userId,
             "Parabéns! Trilha concluída!",
             `Você completou 100% da trilha "${enrollment.learningPath.title}".`,
-            "SUCCESS"
+            "SUCCESS",
+            "PROGRESS"
           )
           .catch((err) => console.error("Erro ao criar notificação:", err));
       }

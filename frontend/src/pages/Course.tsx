@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { api, getErrorMessage } from "../api/client";
+import { Link, useParams, useNavigate } from "react-router-dom";
+import { API_URL, api, getErrorMessage } from "../api/client";
 import { useAuth } from "../context/useAuth";
 import type { Course, Lesson, Module, CourseProgress, LessonComment, MyEnrollment } from "../types";
-import VideoPlayer from "../components/VideoPlayer";
+import VideoPlayer, { type VideoProgressReport } from "../components/VideoPlayer";
+import { resumePosition } from "../utils/video";
 import QuizComponent from "../components/Quiz";
 import CourseReviews from "../components/CourseReviews";
 import CourseTags from "../components/CourseTags";
@@ -16,7 +17,8 @@ type CourseResponse = Omit<Course, "modules"> & {
   modules: CourseModule[];
 };
 
-type CertificateSummary = { id: string; courseId: string; pdfUrl: string };
+type CertificateSummary = { id: string; courseId: string; pdfUrl: string; verificationCode: string };
+type CourseCertificate = Pick<CertificateSummary, "id" | "pdfUrl" | "verificationCode">;
 
 export default function CoursePage() {
   const { id } = useParams<{ id: string }>();
@@ -38,9 +40,11 @@ export default function CoursePage() {
   const [editContent, setEditContent] = useState("");
   const [showQuiz, setShowQuiz] = useState(false);
   const [currentModuleId, setCurrentModuleId] = useState<string | null>(null);
-  const [certificate, setCertificate] = useState<{ id: string; pdfUrl: string } | null>(null);
+  const [certificate, setCertificate] = useState<CourseCertificate | null>(null);
   const [certificateLoading, setCertificateLoading] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
+  // Onde retomar o vídeo da aula atual (carregado antes de montar o player).
+  const [videoStart, setVideoStart] = useState<{ lessonId: string; seconds: number } | null>(null);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   const isOwner =
@@ -95,7 +99,7 @@ export default function CoursePage() {
             ]);
             setProgress(progressRes.data);
             if (courseCert) {
-              setCertificate({ id: courseCert.id, pdfUrl: courseCert.pdfUrl });
+              setCertificate(courseCert);
             }
           } catch (progressErr) {
             console.warn("Erro ao carregar progresso:", progressErr);
@@ -148,6 +152,74 @@ export default function CoursePage() {
       setShowQuiz(false);
     }
   }, [currentLesson, course, progress, isEnrolled]);
+
+  useEffect(() => {
+    if (!currentLessonId || !isLearner) return;
+    const lessonId = currentLessonId;
+    let cancelled = false;
+    api
+      .get<{ lastPositionSeconds: number; videoDurationSeconds: number | null } | null>(`/progress/lesson/${lessonId}`)
+      .then((res) => resumePosition(res.data?.lastPositionSeconds, res.data?.videoDurationSeconds))
+      .catch(() => 0)
+      .then((seconds) => {
+        if (!cancelled) setVideoStart({ lessonId, seconds });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLessonId, isLearner]);
+
+  /** Atualiza progresso e certificado depois que uma aula foi concluída automaticamente. */
+  const handleLessonAutoCompleted = useCallback(
+    async (lessonId: string) => {
+      if (lessonId === currentLessonId) setCurrentLessonProgress(true);
+      showToast("✓ Aula concluída: você assistiu ao vídeo.", "success");
+      if (!id) return;
+      try {
+        const [progressRes, courseCert] = await Promise.all([
+          api.get<CourseProgress>(`/progress/course/${id}`),
+          findCourseCertificate().catch(() => null),
+        ]);
+        setProgress(progressRes.data);
+        if (courseCert && !certificate) {
+          setCertificate(courseCert);
+          showToast("🎉 Certificado gerado com sucesso!", "success");
+        }
+      } catch (err) {
+        console.warn("Erro ao atualizar progresso:", err);
+      }
+    },
+    [certificate, currentLessonId, findCourseCertificate, id, showToast]
+  );
+
+  const handleVideoProgress = useCallback(
+    (lessonId: string, report: VideoProgressReport) => {
+      const { final, ...data } = report;
+      const body = { lessonId, ...data };
+      const onResult = (result: { autoCompleted?: boolean } | null) => {
+        if (result?.autoCompleted) handleLessonAutoCompleted(lessonId);
+      };
+      if (final) {
+        // A página pode estar fechando: keepalive garante que o envio termine.
+        fetch(`${API_URL}/progress/video`, {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+          headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+          body: JSON.stringify(body),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then(onResult)
+          .catch(() => undefined);
+        return;
+      }
+      api
+        .post<{ autoCompleted?: boolean }>("/progress/video", body)
+        .then((res) => onResult(res.data))
+        .catch((err) => console.warn("Erro ao registrar progresso do vídeo:", err));
+    },
+    [handleLessonAutoCompleted]
+  );
 
   useEffect(() => {
     if (!currentLessonId || !isEnrolled) {
@@ -232,8 +304,8 @@ export default function CoursePage() {
         let courseCert = existingCert;
         if (!courseCert && progressRes.data.progressPercentage === 100) {
           try {
-            const certRes = await api.post<{ id: string; pdfUrl: string }>("/certificates/generate", { courseId: id });
-            courseCert = { id: certRes.data.id, courseId: id, pdfUrl: certRes.data.pdfUrl };
+            const certRes = await api.post<CourseCertificate>("/certificates/generate", { courseId: id });
+            courseCert = { ...certRes.data, courseId: id };
           } catch (certErr) {
             console.warn("Erro ao gerar certificado:", certErr);
             showToast(
@@ -246,7 +318,7 @@ export default function CoursePage() {
         if (courseCert && !certificate) {
           showToast("🎉 Certificado gerado com sucesso!", "success");
         }
-        setCertificate(courseCert ? { id: courseCert.id, pdfUrl: courseCert.pdfUrl } : null);
+        setCertificate(courseCert);
       }
     } catch (err) {
       showToast(getErrorMessage(err, "Erro ao atualizar progresso"), "error");
@@ -441,7 +513,20 @@ export default function CoursePage() {
         </div>
         {currentLesson ? (
           <>
-            <VideoPlayer videoUrl={currentLesson.videoUrl} />
+            {!isLearner ? (
+              <VideoPlayer key={currentLesson.id} videoUrl={currentLesson.videoUrl} />
+            ) : videoStart?.lessonId === currentLesson.id ? (
+              <VideoPlayer
+                key={currentLesson.id}
+                videoUrl={currentLesson.videoUrl}
+                startAt={videoStart.seconds}
+                onProgress={(report) => handleVideoProgress(currentLesson.id, report)}
+              />
+            ) : (
+              <div className="video-placeholder">
+                <p>Carregando vídeo...</p>
+              </div>
+            )}
             {currentLesson.description && (
               <div className="lesson-description">
                 <h3>Descrição</h3>
@@ -461,7 +546,23 @@ export default function CoursePage() {
             )}
             {showQuiz && currentModuleId && (
               <div className="quiz-section">
-                <QuizComponent key={currentModuleId} moduleId={currentModuleId} />
+                <QuizComponent
+                  key={currentModuleId}
+                  moduleId={currentModuleId}
+                  onComplete={async (attempt) => {
+                    // A aprovação pode ter sido o último requisito do certificado.
+                    if (!attempt.passed || !id) return;
+                    const [progressRes, courseCert] = await Promise.all([
+                      api.get<CourseProgress>(`/progress/course/${id}`),
+                      findCourseCertificate().catch(() => null),
+                    ]);
+                    setProgress(progressRes.data);
+                    if (courseCert && !certificate) {
+                      setCertificate(courseCert);
+                      showToast("🎉 Certificado gerado com sucesso!", "success");
+                    }
+                  }}
+                />
               </div>
             )}
             {isEnrolled && (
@@ -713,6 +814,12 @@ export default function CoursePage() {
                     <div>
                       <strong>Certificado Disponível!</strong>
                       <small>Você completou este curso com sucesso</small>
+                      <small>
+                        Código de verificação:{" "}
+                        <Link to={`/certificates/verify/${certificate.verificationCode}`}>
+                          {certificate.verificationCode}
+                        </Link>
+                      </small>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: "8px", flexDirection: "column" }}>
@@ -732,7 +839,19 @@ export default function CoursePage() {
                   </div>
                 </div>
               )}
-              {progress.progressPercentage === 100 && !certificate && (
+              {progress.progressPercentage === 100 && !certificate && (progress.pendingQuizzes?.length ?? 0) > 0 && (
+                <div className="certificate-section">
+                  <div className="certificate-badge">
+                    <span>📝</span>
+                    <div>
+                      <strong>Aulas concluídas!</strong>
+                      <small>Para obter o certificado, seja aprovado nos quizzes:</small>
+                      <small>{progress.pendingQuizzes!.map((q) => q.title).join(", ")}</small>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {progress.progressPercentage === 100 && !certificate && !progress.pendingQuizzes?.length && (
                 <div className="certificate-section">
                   <div className="certificate-badge">
                     <span>🎉</span>
@@ -746,8 +865,8 @@ export default function CoursePage() {
                       if (!id) return;
                       try {
                         setCertificateLoading(true);
-                        const certRes = await api.post<{ id: string; pdfUrl: string }>("/certificates/generate", { courseId: id });
-                        setCertificate({ id: certRes.data.id, pdfUrl: certRes.data.pdfUrl });
+                        const certRes = await api.post<CourseCertificate>("/certificates/generate", { courseId: id });
+                        setCertificate(certRes.data);
                         showToast("🎉 Certificado gerado com sucesso!", "success");
                       } catch (err) {
                         showToast(

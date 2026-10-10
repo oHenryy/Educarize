@@ -42,15 +42,20 @@ Plataforma LMS modular com foco em simplicidade para alunos, instrutores e admin
    - Estrutura hierárquica: Curso → Módulo → Aula
    - Gestão completa de cursos (CRUD)
    - Configurações de curso (capa, descrição, carga horária, categoria, dificuldade, status)
-   - Gestão de módulos e aulas
+   - Gestão de módulos e aulas, com reordenação por arrastar e soltar (mouse, toque ou teclado)
    - Material de apoio expandido (anexos categorizados: PDF, ZIP, Vídeo, Link, Documento, Imagem)
    - Sistema de anexos com descrição, categoria, ordem, miniatura e contador de downloads
+   - Upload de capas e materiais (ou links externos), guardados em disco ou em storage compatível com S3
+     (Silo no ambiente local, AWS S3, Cloudflare R2...); os certificados em PDF usam o mesmo storage
    - Lista de alunos matriculados por curso
    - Dashboard do instrutor com estatísticas e métricas
 
 3. **Experiência de Aprendizagem (Aluno)**
    - Catálogo de cursos com busca avançada e filtros
-   - Player de vídeo integrado (YouTube/Vimeo)
+   - Busca textual do PostgreSQL (português): ignora acentos e maiúsculas, aceita prefixos e palavras
+     flexionadas e ordena por relevância (título pesa mais que a descrição); vale para cursos, aulas e anotações
+   - Player de vídeo integrado (YouTube/Vimeo) que registra o tempo realmente assistido, retoma de onde o
+     aluno parou e conclui a aula automaticamente ao assistir 90% do vídeo
    - Navegação lateral de aulas
    - Marcador de progresso por aula e por curso
    - Sistema de favoritos/wishlist
@@ -59,9 +64,12 @@ Plataforma LMS modular com foco em simplicidade para alunos, instrutores e admin
 
 4. **Avaliação e Engajamento**
    - Quizzes de múltipla escolha ao final de módulos
-   - Múltiplas tentativas de quiz
+   - Múltiplas tentativas de quiz, com limite opcional por quiz
+   - Questões e alternativas embaralhadas (opcional) e explicação por questão
+   - Feedback por questão; a resposta correta só aparece após aprovação ou ao esgotar as tentativas
    - Histórico de tentativas
-   - Certificado em PDF ao atingir 100% de progresso
+   - Certificado em PDF ao atingir 100% de progresso (o curso pode exigir também a aprovação nos quizzes)
+   - Verificação pública de certificados por código ou QR code (`/certificates/verify/:code`)
    - Sistema de comentários/dúvidas por aula (estilo fórum com respostas)
    - Sistema de avaliações e reviews com estrelas (1-5) e comentários
    - Exibição de média de avaliações nos cursos
@@ -82,6 +90,9 @@ Plataforma LMS modular com foco em simplicidade para alunos, instrutores e admin
    - Notificações de novas mensagens
    - Contador de notificações não lidas
    - Marcar como lida / marcar todas como lidas
+   - Notificações por e-mail, com preferência por assunto no perfil (mensagens, comentários, certificados,
+     avaliações, quizzes, matrículas e progresso). Só para e-mails confirmados; mensagens diretas só geram
+     e-mail quando o destinatário não está com o Educarize aberto
 
 7. **Sistema de Tags**
    - Tags para categorização de cursos
@@ -99,7 +110,7 @@ Plataforma LMS modular com foco em simplicidade para alunos, instrutores e admin
 9. **Trilhas de Aprendizado**
    - Criação de trilhas temáticas
    - Agrupamento de cursos relacionados
-   - Ordem sugerida de cursos
+   - Ordem sugerida de cursos, reordenável por arrastar e soltar
    - Progresso da trilha
    - Inscrição em trilhas
    - Gestão completa de trilhas (criar, editar, deletar, adicionar/remover cursos)
@@ -160,16 +171,20 @@ Educarize/
 #### Pré-requisitos
 - Node.js (v20 ou superior)
 - npm
-- Docker (para subir PostgreSQL e Redis) — ou um PostgreSQL 14+ e, opcionalmente, um Redis próprios
+- Docker (para subir PostgreSQL, Redis e Silo) — ou um PostgreSQL 14+ e, opcionalmente, Redis e storage S3 próprios
 
-#### Banco de dados e Redis
+#### Banco de dados, Redis e storage S3
 
 Na raiz do projeto:
 ```bash
 docker compose up -d
 ```
-Isso sobe o PostgreSQL em `localhost:5432` (usuário, senha e banco `educarize`) e o Redis em `localhost:6379`,
-com os dados persistidos em volumes do Docker.
+Isso sobe, com os dados persistidos em volumes do Docker:
+- PostgreSQL em `localhost:5432` (usuário, senha e banco `educarize`);
+- Redis em `localhost:6379`;
+- [Silo](https://silo.pigsty.io/docs/) — fork comunitário do MinIO, compatível com S3 — com a API em `localhost:9000` e o
+  console web em http://localhost:9001 (usuário `educarize`, senha `educarize-silo`). Guarda capas, materiais e
+  certificados; o bucket `educarize` é criado pelo backend na primeira execução.
 
 #### Backend
 
@@ -193,7 +208,18 @@ com os dados persistidos em volumes do Docker.
      FRONTEND_URL=http://localhost:5173
      # Opcional: compartilha rate limit e Socket.io entre várias instâncias do backend
      REDIS_URL=redis://localhost:6379
+     # Arquivos no Silo do docker compose (sem S3_BUCKET, ficam em disco na pasta uploads/)
+     S3_BUCKET=educarize
+     S3_ENDPOINT=http://localhost:9000
+     S3_ACCESS_KEY_ID=educarize
+     S3_SECRET_ACCESS_KEY=educarize-silo
+     S3_FORCE_PATH_STYLE=true
+     S3_CREATE_BUCKET=true
      ```
+   - Ao subir, o backend informa onde guarda os arquivos (ou avisa se o storage estiver inacessível).
+   - Em produção, aponte `S3_*` para o seu storage (AWS S3, Silo/MinIO, R2...), crie o bucket antes e deixe
+     `S3_CREATE_BUCKET` desligado. Com várias instâncias do backend, use S3 (o disco local não é compartilhado).
+     Atrás de proxy/HTTPS, defina `PUBLIC_API_URL` para que os links dos arquivos usem o endereço público da API.
    - `JWT_SECRET` é **obrigatório** com `NODE_ENV=production`; em desenvolvimento, se ausente, é usada uma chave
      de teste e um aviso é exibido no console.
 
@@ -264,7 +290,8 @@ com os dados persistidos em volumes do Docker.
 - `npm run create-admin` - Cria um usuário administrador
 - `npm run typecheck` - Verifica os tipos do código e dos testes
 - `npm test` - Roda os testes de API (Vitest + Supertest) em um schema PostgreSQL temporário, criado e removido
-  a cada execução (requer o PostgreSQL do `docker compose`; os testes de Redis são pulados se ele não estiver no ar)
+  a cada execução (requer o PostgreSQL do `docker compose`; os testes de Redis e do storage S3/Silo são pulados se
+  eles não estiverem no ar — no CI são obrigatórios)
 
 #### Frontend
 - `npm run dev` - Inicia o servidor de desenvolvimento
@@ -274,8 +301,8 @@ com os dados persistidos em volumes do Docker.
 
 #### Testes de ponta a ponta (`e2e/`)
 - `npm install` e, na primeira vez, `npx playwright install chromium`
-- `npm test` - Sobe backend (schema `e2e` no PostgreSQL, com Redis) e frontend automaticamente e roda os cenários
-  no Chromium
+- `npm test` - Sobe backend (schema `e2e` no PostgreSQL, com Redis e o bucket `educarize-e2e` no Silo, esvaziado a
+  cada execução) e frontend automaticamente e roda os cenários no Chromium (requer `docker compose up -d`)
 - `npm run test:edge` - Mesmo teste usando o Microsoft Edge instalado (sem baixar navegador)
 
 ### Integração Contínua
@@ -337,9 +364,12 @@ As variáveis de ambiente opcionais (sessão, SMTP etc.) estão documentadas em 
   instrutor dono do curso, administradores e usuários matriculados. Quem não está matriculado vê apenas a ementa.
   Instrutores e administradores também podem se matricular em cursos de outros instrutores.
 - **Rascunhos**: cursos e trilhas não publicados só aparecem para o autor e para administradores.
-- **Quizzes**: o gabarito é enviado apenas ao dono do curso e a administradores.
-- **Certificados**: exigem matrícula e 100% das aulas concluídas; o download (`GET /certificates/:id/download`)
-  exige autenticação e só é permitido ao dono do certificado.
+- **Quizzes**: o gabarito e as explicações são enviados apenas ao dono do curso e a administradores; o aluno os
+  vê no resultado da tentativa depois de ser aprovado ou de esgotar as tentativas.
+- **Certificados**: exigem matrícula e 100% das aulas concluídas (e aprovação nos quizzes, se o curso exigir); o
+  download (`GET /certificates/:id/download`) exige autenticação e só é permitido ao dono do certificado. A
+  verificação pelo código (`GET /certificates/verify/:code`) é pública e mostra apenas os dados impressos.
+- **Vídeos**: o progresso só conta tempo de reprodução (pular trechos não conta) e é limitado à duração do vídeo.
 - **Avaliações**: apenas alunos matriculados podem avaliar um curso (o instrutor não avalia o próprio curso).
 - **Trilhas**: podem combinar cursos publicados de qualquer instrutor. Ao se matricular em uma trilha, o aluno é
   matriculado automaticamente nos cursos obrigatórios publicados; o progresso considera os cursos obrigatórios.
@@ -347,6 +377,14 @@ As variáveis de ambiente opcionais (sessão, SMTP etc.) estão documentadas em 
   (`POST /admin/users/:id/transfer-content`) antes de serem excluídos ou rebaixados para `STUDENT`.
 - **Comentários**: excluir um comentário remove também as respostas dele.
 - **Links**: URLs de vídeo e de anexos precisam ser `http://` ou `https://`.
+- **Arquivos enviados**: só instrutores e administradores enviam. O tipo é validado pela extensão e pela
+  assinatura do arquivo (HTML, SVG e scripts são recusados); capas até 5 MB e materiais até 50 MB. Capas são
+  públicas; materiais só podem ser baixados por quem tem acesso ao curso. Arquivos sem uso (material excluído,
+  capa trocada, curso removido) são apagados do storage.
+- **Limpeza de arquivos**: o servidor remove periodicamente (padrão: a cada 6 h) os arquivos enviados há mais de
+  24 h que não estão em nenhum material nem capa de curso ou trilha, como envios de formulários abandonados.
+  Ajuste com `FILE_CLEANUP_INTERVAL_HOURS` (0 desativa) e `FILE_CLEANUP_GRACE_HOURS`; para rodar manualmente:
+  `npm run cleanup-files -- [horas de carência]`.
 - **Login/cadastro**: limitados a 20 tentativas a cada 15 minutos por IP.
 
 ### Status dos Cursos

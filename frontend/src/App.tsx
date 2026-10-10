@@ -32,6 +32,7 @@ import MessagesPage from "./pages/Messages";
 import ForgotPasswordPage from "./pages/ForgotPassword";
 import ResetPasswordPage from "./pages/ResetPassword";
 import VerifyEmailPage from "./pages/VerifyEmail";
+import VerifyCertificatePage from "./pages/VerifyCertificate";
 import Notifications from "./components/Notifications";
 
 function ProtectedRoute({ children }: { children: ReactElement }) {
@@ -215,6 +216,8 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/certificates/verify" element={<VerifyCertificatePage />} />
+          <Route path="/certificates/verify/:code" element={<VerifyCertificatePage />} />
           <Route
             path="/catalog"
             element={

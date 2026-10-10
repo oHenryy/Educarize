@@ -142,3 +142,44 @@ describe("certificados — rotas de arquivo", () => {
     expect(legacy.status).toBe(404);
   });
 });
+
+describe("verificação pública de certificado", () => {
+  it("qualquer pessoa confere o certificado pelo código, sem login e sem dados pessoais extras", async () => {
+    const instructor = await registerUser("INSTRUCTOR", "Prof. Helena");
+    const student = await registerUser("STUDENT", "Ícaro Souza");
+    const { course, lesson } = await createCourse(instructor, { publish: true, title: "Curso Verificável" });
+    await api.post("/enrollments").set(auth(student)).send({ courseId: course.id });
+    await api.post("/progress/complete").set(auth(student)).send({ lessonId: lesson.id });
+
+    const [cert] = (await api.get("/certificates/my").set(auth(student))).body;
+    expect(cert.verificationCode).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+
+    const res = await api.get(`/certificates/verify/${cert.verificationCode}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      valid: true,
+      verificationCode: cert.verificationCode,
+      studentName: "Ícaro Souza",
+      courseTitle: "Curso Verificável",
+      instructorName: "Prof. Helena",
+    });
+    expect(JSON.stringify(res.body)).not.toMatch(/@|userId|email/);
+
+    // Aceita sem hífens e em minúsculas (digitado a partir do papel).
+    const typed = await api.get(`/certificates/verify/${cert.verificationCode.replace(/-/g, "").toLowerCase()}`);
+    expect(typed.status).toBe(200);
+
+    expect((await api.get("/certificates/verify/AAAA-BBBB-CCCC")).status).toBe(404);
+  });
+
+  it("regerar o PDF mantém o mesmo código", async () => {
+    const instructor = await registerUser("INSTRUCTOR");
+    const student = await registerUser();
+    const { course, lesson } = await createCourse(instructor, { publish: true });
+    await api.post("/enrollments").set(auth(student)).send({ courseId: course.id });
+    await api.post("/progress/complete").set(auth(student)).send({ lessonId: lesson.id });
+    const first = (await api.get("/certificates/my").set(auth(student))).body[0];
+    const again = await api.post("/certificates/generate").set(auth(student)).send({ courseId: course.id });
+    expect(again.body.verificationCode).toBe(first.verificationCode);
+  });
+});

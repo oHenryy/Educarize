@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PREFERENCE_CATEGORIES, type PreferenceCategory } from "../services/notificationService";
 
 // ---------- blocos reutilizáveis ----------
 const id = z.string({ required_error: "ID é obrigatório" }).trim().min(1, "ID é obrigatório").max(64, "ID inválido");
@@ -112,6 +113,7 @@ export const createCourseBody = z.object({
   durationHours: intRange("Carga horária", 0, 10000).optional(),
   difficulty: difficulty.optional(),
   categoryId: z.string().max(64).nullish(),
+  requireQuizzesForCertificate: z.boolean().optional(),
 });
 
 export const updateCourseBody = createCourseBody.partial().extend({ status: courseStatus.optional() });
@@ -125,6 +127,24 @@ export const createModuleBody = z.object({
 
 export const updateModuleBody = createModuleBody.omit({ courseId: true }).partial();
 
+const idList = (field: string) =>
+  z.array(id, { required_error: `${field} é obrigatório`, invalid_type_error: `${field} deve ser uma lista de IDs` }).max(500);
+
+export const notificationPreferencesBody = z.object({
+  email: z
+    .object(
+      Object.fromEntries(PREFERENCE_CATEGORIES.map((category) => [category, z.boolean().optional()])) as Record<
+        PreferenceCategory,
+        z.ZodOptional<z.ZodBoolean>
+      >,
+      { required_error: "email é obrigatório", invalid_type_error: "email deve ser um objeto" }
+    )
+    .strict("Categoria de notificação desconhecida"),
+});
+
+export const reorderModulesBody = z.object({ courseId: id, moduleIds: idList("moduleIds") });
+export const reorderLessonsBody = z.object({ moduleId: id, lessonIds: idList("lessonIds") });
+
 export const createLessonBody = z.object({
   title: text("Título", 200),
   description: optionalText("Descrição", 5000),
@@ -136,18 +156,32 @@ export const createLessonBody = z.object({
 
 export const updateLessonBody = createLessonBody.omit({ moduleId: true }).partial();
 
-export const attachmentBody = z.object({
+const attachmentFields = z.object({
   name: text("Nome", 200),
   description: optionalText("Descrição", 2000),
-  fileUrl: z.string({ required_error: "Link do arquivo é obrigatório" }).trim().min(1, "Link do arquivo é obrigatório").max(2048),
-  fileType: text("Tipo do arquivo", 50),
+  /** Arquivo enviado por POST /files (alternativa a fileUrl: link, tipo e tamanho vêm do arquivo). */
+  fileId: id.optional(),
+  fileUrl: z.string().trim().min(1, "Link do arquivo é obrigatório").max(2048).optional(),
+  fileType: text("Tipo do arquivo", 50).optional(),
   fileSize: z.number().int().min(0).nullish(),
   category: optionalText("Categoria", 50),
   order: intRange("Ordem", 0, 10000).optional(),
   thumbnailUrl: optionalUrl("Link da miniatura"),
 });
 
-export const updateAttachmentBody = attachmentBody.partial();
+export const attachmentBody = attachmentFields.refine((data) => data.fileId || (data.fileUrl && data.fileType), {
+  message: "Envie um arquivo ou informe o link e o tipo do arquivo",
+  path: ["fileUrl"],
+});
+
+export const updateAttachmentBody = attachmentFields.partial();
+
+export const uploadFileBody = z.object({
+  purpose: z.enum(["cover", "attachment", "COVER", "ATTACHMENT"], {
+    required_error: "Informe a finalidade do arquivo (cover ou attachment)",
+    invalid_type_error: "Finalidade inválida: use cover ou attachment",
+  }),
+});
 
 // ---------- quizzes ----------
 export const createQuizBody = z.object({
@@ -155,6 +189,9 @@ export const createQuizBody = z.object({
   title: text("Título", 200),
   description: optionalText("Descrição", 2000),
   passingScore: intRange("Nota mínima", 0, 100).optional(),
+  maxAttempts: intRange("Limite de tentativas", 1, 100).nullish(),
+  shuffleQuestions: z.boolean().optional(),
+  shuffleOptions: z.boolean().optional(),
 });
 
 export const updateQuizBody = createQuizBody.omit({ moduleId: true }).partial();
@@ -166,6 +203,7 @@ const questionFields = {
     .min(2, "options deve ser um array com pelo menos 2 opções")
     .max(10, "No máximo 10 opções"),
   correctAnswer: z.number({ required_error: "correctAnswer é obrigatório" }).int("Resposta correta inválida"),
+  explanation: optionalText("Explicação", 2000),
   order: intRange("Ordem", 0, 10000).optional(),
 };
 
@@ -198,6 +236,14 @@ export const updateReviewBody = createReviewBody.omit({ courseId: true }).partia
 export const sendMessageBody = z.object({ receiverId: id, content: text("Mensagem", 5000, "f") });
 
 export const courseIdBody = z.object({ courseId: id });
+
+/** Andamento do vídeo enviado periodicamente pelo player (incremento limitado a 2 min por envio). */
+export const videoProgressBody = z.object({
+  lessonId: id,
+  positionSeconds: intRange("Posição", 0, 86400),
+  durationSeconds: intRange("Duração", 1, 86400),
+  watchedDeltaSeconds: intRange("Tempo assistido", 0, 120),
+});
 export const lessonIdBody = z.object({ lessonId: id });
 
 export const tagBody = z.object({ name: text("Nome da tag", 50) });

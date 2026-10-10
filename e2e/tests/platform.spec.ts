@@ -10,6 +10,7 @@ let bia: Session;   // aluna
 let caio: Session;  // outro instrutor
 let admin: Session;
 let courseId: string;
+let verificationCode: string;
 
 test.describe.serial("Educarize de ponta a ponta", () => {
   test.beforeAll(async ({ browser }) => {
@@ -68,7 +69,8 @@ test.describe.serial("Educarize de ponta a ponta", () => {
     await p.goto("/favorites");
     await expect(p).toHaveURL(/\/favorites$/);
     await expect(p.getByRole("link", { name: "Favoritos" })).toBeVisible();
-    expect((await p.context().cookies()).some((c) => c.name === "access_token")).toBe(true);
+    // A renovação pode terminar logo depois de a página aparecer.
+    await expect.poll(async () => (await p.context().cookies()).some((c) => c.name === "access_token")).toBe(true);
   });
 
   test("instrutora cria curso em rascunho, invisível para a aluna", async () => {
@@ -110,6 +112,8 @@ test.describe.serial("Educarize de ponta a ponta", () => {
     await p.getByRole("button", { name: "📝 Quiz" }).click();
     await p.locator('.form-card input[name="title"]').fill("Quiz do Módulo 1");
     await p.locator('.form-card input[name="passingScore"]').fill("0");
+    await p.locator('.form-card input[name="maxAttempts"]').fill("5");
+    await p.locator('.form-card input[name="shuffleOptions"]').check();
     await p.locator(".form-card").getByRole("button", { name: "Criar" }).click();
     await expect(p.getByText("Quiz criado com sucesso!")).toBeVisible();
     await expect(p.locator('.form-card input[name="passingScore"]')).toHaveValue("0");
@@ -121,9 +125,30 @@ test.describe.serial("Educarize de ponta a ponta", () => {
     await p.locator('input[name="option2"]').fill("B");
     await p.locator('input[name="option4"]').fill("D");
     await p.locator('select[name="correctAnswer"]').selectOption("3");
+    await p.locator('textarea[name="explanation"]').fill("D é a quarta letra.");
     await p.locator(".form-card form").last().locator('button[type="submit"]').click();
     await expect(p.getByText("Questão criada com sucesso!")).toBeVisible();
     await expect(p.locator(".question-option-preview.correct").first()).toHaveText(/^C\. D/);
+  });
+
+  test("instrutora reordena módulos arrastando com o mouse", async () => {
+    const p = ana.page;
+    const extra = await apiAs<{ id: string }>(ana, "POST", "/modules", { title: "Módulo Extra", courseId, order: 1 });
+    await p.goto(`/instructor/courses/${courseId}/content`);
+    await expect(p.locator(".module-card h3")).toHaveText(["Módulo 1", "Módulo Extra"]);
+
+    const handle = await p.getByRole("button", { name: "Reordenar Módulo Extra" }).boundingBox();
+    const target = await p.locator(".module-card").first().boundingBox();
+    await p.mouse.move(handle!.x + handle!.width / 2, handle!.y + handle!.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(handle!.x + handle!.width / 2, target!.y + 5, { steps: 15 });
+    await p.mouse.up();
+    await expect(p.locator(".module-card h3")).toHaveText(["Módulo Extra", "Módulo 1"]);
+
+    await expect
+      .poll(async () => (await apiAs<{ id: string }[]>(ana, "GET", `/modules/course/${courseId}`)).data[0].id)
+      .toBe(extra.data.id);
+    await apiAs(ana, "DELETE", `/modules/${extra.data.id}`);
   });
 
   test("instrutora publica o curso (sem opção de suspender)", async () => {
@@ -167,11 +192,151 @@ test.describe.serial("Educarize de ponta a ponta", () => {
     const file = await download.path();
     expect(fs.readFileSync(file!).subarray(0, 4).toString()).toBe("%PDF");
 
-    const certs = await apiAs<unknown[]>(bia, "GET", "/certificates/my");
+    const certs = await apiAs<{ verificationCode: string }[]>(bia, "GET", "/certificates/my");
     expect(certs.data).toHaveLength(1);
+    verificationCode = certs.data[0].verificationCode;
+    await expect(p.getByRole("link", { name: verificationCode })).toBeVisible();
 
     await p.goto(`/instructor/courses/${courseId}/content`);
     await p.waitForURL("**/catalog");
+  });
+
+  test("instrutora envia capa e material; só quem está matriculado baixa", async () => {
+    const png = Buffer.from(
+      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082",
+      "hex"
+    );
+    const p = ana.page;
+    await p.goto(`/instructor/courses/${courseId}/edit`);
+    await p.getByLabel("Enviar imagem").setInputFiles({ name: "capa.png", mimeType: "image/png", buffer: png });
+    await expect(p.locator(".cover-preview")).toHaveAttribute("src", /\/files\/[a-z0-9]+$/);
+    await p.click('button[type="submit"]');
+    await p.waitForURL("**/instructor/courses");
+
+    await p.goto(`/course/${courseId}`);
+    await p.getByRole("button", { name: "Adicionar Material" }).click();
+    await p.getByLabel("Escolher arquivo").setInputFiles({
+      name: "Apostila.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4\n%%EOF\n"),
+    });
+    await expect(p.getByText("✓ Apostila.pdf")).toBeVisible();
+    await expect(p.locator(".attachment-form input[type=text]").first()).toHaveValue("Apostila");
+    await p.getByRole("button", { name: "Adicionar", exact: true }).click();
+    await expect(p.locator(".attachment-item h5", { hasText: "Apostila" })).toBeVisible();
+
+    const course = await apiAs<{ modules: { lessons: { id: string }[] }[] }>(ana, "GET", `/courses/${courseId}`);
+    const lessonId = course.data.modules[0].lessons[0].id;
+    const [material] = (await apiAs<{ fileUrl: string }[]>(ana, "GET", `/lessons/${lessonId}/attachments`)).data;
+
+    // A aluna matriculada baixa o PDF; sem sessão, o arquivo é negado.
+    const fetchFile = (credentials: RequestCredentials) =>
+      bia.page.evaluate(
+        async ({ url, credentials }) => {
+          const res = await fetch(url, { credentials });
+          return { status: res.status, start: (await res.text()).slice(0, 5) };
+        },
+        { url: material.fileUrl, credentials }
+      );
+    expect(await fetchFile("include")).toEqual({ status: 200, start: "%PDF-" });
+    expect((await fetchFile("omit")).status).toBe(401);
+
+    // A capa enviada aparece no catálogo (servida pela API para o frontend, em outra origem).
+    await bia.page.goto("/catalog");
+    const cover = bia.page.locator('img[src*="/files/"]').first();
+    await expect(cover).toBeVisible();
+    await expect.poll(() => cover.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  });
+
+  test("qualquer pessoa verifica o certificado pelo código, sem login", async ({ browser }) => {
+    const visitor = await newSession(browser, "visitante");
+    await visitor.page.goto(`/certificates/verify/${verificationCode}`);
+    await expect(visitor.page.getByText("✓ Certificado autêntico")).toBeVisible();
+    await expect(visitor.page.getByText("Bia Aluna")).toBeVisible();
+    await expect(visitor.page.getByText(courseTitle)).toBeVisible();
+
+    await visitor.page.goto("/certificates/verify");
+    await visitor.page.fill("#code", "AAAA-BBBB-CCCC");
+    await visitor.page.getByRole("button", { name: "Verificar" }).click();
+    await expect(visitor.page.getByRole("alert")).toContainText("Certificado não encontrado");
+  });
+
+  test("configurações do quiz salvas pelo editor", async () => {
+    const course = await apiAs<{ modules: { id: string }[] }>(ana, "GET", `/courses/${courseId}`);
+    const quiz = await apiAs<{ maxAttempts: number; shuffleOptions: boolean; questions: { explanation: string }[] }>(
+      ana,
+      "GET",
+      `/quizzes/module/${course.data.modules[0].id}`
+    );
+    expect(quiz.data).toMatchObject({ maxAttempts: 5, shuffleOptions: true });
+    expect(quiz.data.questions[0].explanation).toBe("D é a quarta letra.");
+  });
+
+  test("quiz obrigatório: feedback sem gabarito, nova tentativa e certificado após aprovação", async () => {
+    // Curso preparado pela API: exige quizzes, nota mínima 100% e 2 tentativas.
+    const c = await apiAs<{ id: string }>(ana, "POST", "/courses", { title: `Curso com Quiz ${uid}`, requireQuizzesForCertificate: true });
+    const m = await apiAs<{ id: string }>(ana, "POST", "/modules", { title: "Único", courseId: c.data.id });
+    const l = await apiAs<{ id: string }>(ana, "POST", "/lessons", { title: "Aula única", moduleId: m.data.id });
+    const q = await apiAs<{ id: string }>(ana, "POST", "/quizzes", { moduleId: m.data.id, title: "Prova", passingScore: 100, maxAttempts: 2 });
+    await apiAs(ana, "POST", "/quizzes/questions", {
+      quizId: q.data.id, question: "Capital do Brasil?", options: ["Rio", "Brasília"], correctAnswer: 1, explanation: "Desde 1960.",
+    });
+    await apiAs(ana, "PUT", `/courses/${c.data.id}`, { status: "PUBLISHED" });
+
+    const p = bia.page;
+    await apiAs(bia, "POST", "/enrollments", { courseId: c.data.id });
+    await p.goto(`/course/${c.data.id}`);
+    await p.getByRole("button", { name: "Marcar como Concluída" }).click();
+    await expect(p.getByText("Aulas concluídas!")).toBeVisible();
+    await expect(p.locator(".certificate-section")).toContainText("Prova");
+
+    await p.locator(".quiz-option", { hasText: "Rio" }).click();
+    await p.getByRole("button", { name: "Enviar Respostas" }).click();
+    await expect(p.getByText("Você não atingiu a nota mínima")).toBeVisible();
+    await expect(p.locator(".quiz-feedback li.incorrect")).toBeVisible();
+    await expect(p.getByText("Resposta correta:")).toHaveCount(0);
+    await expect(p.getByText("Desde 1960.")).toHaveCount(0);
+
+    await p.getByRole("button", { name: "Tentar Novamente (1 restante)" }).click();
+    await p.locator(".quiz-option", { hasText: "Brasília" }).click();
+    await p.getByRole("button", { name: "Enviar Respostas" }).click();
+    await expect(p.getByText("Parabéns! Você passou!")).toBeVisible();
+    await expect(p.getByText("Desde 1960.")).toBeVisible();
+    await expect(p.getByText("Certificado Disponível!")).toBeVisible();
+  });
+
+  test("vídeo: retoma de onde parou e conclui a aula ao assistir 90%", async () => {
+    const c = await apiAs<{ id: string }>(ana, "POST", "/courses", { title: `Curso com Vídeo ${uid}` });
+    const m = await apiAs<{ id: string }>(ana, "POST", "/modules", { title: "Único", courseId: c.data.id });
+    await apiAs(ana, "POST", "/lessons", { title: "Aula em vídeo", moduleId: m.data.id, videoUrl: "https://youtu.be/dQw4w9WgXcQ" });
+    await apiAs(ana, "PUT", `/courses/${c.data.id}`, { status: "PUBLISHED" });
+
+    const p = bia.page;
+    await apiAs(bia, "POST", "/enrollments", { courseId: c.data.id });
+    await p.goto(`/course/${c.data.id}`);
+    await expect(p.locator(".video-player iframe")).toBeVisible();
+    expect(await p.evaluate(() => (window as unknown as { __fakeYT: { start: number } }).__fakeYT.start)).toBe(0);
+
+    // Assiste até ~8s e pausa: a pausa envia a posição.
+    await p.evaluate(() => (window as unknown as { __fakeYT: { play(): void } }).__fakeYT.play());
+    await expect
+      .poll(() => p.evaluate(() => (window as unknown as { __fakeYT: { time(): number } }).__fakeYT.time()))
+      .toBeGreaterThanOrEqual(8);
+    const saved = p.waitForResponse((res) => res.url().endsWith("/progress/video") && res.ok());
+    await p.evaluate(() => (window as unknown as { __fakeYT: { pause(): void } }).__fakeYT.pause());
+    await saved;
+
+    // Ao voltar, o player começa de onde parou.
+    await p.reload();
+    await expect(p.locator(".video-player iframe")).toBeVisible();
+    expect(await p.evaluate(() => (window as unknown as { __fakeYT: { start: number } }).__fakeYT.start)).toBeGreaterThanOrEqual(8);
+    await expect(p.getByRole("button", { name: "Marcar como Concluída" })).toBeVisible();
+
+    // Assiste até o fim: a aula é concluída sozinha e o certificado sai.
+    await p.evaluate(() => (window as unknown as { __fakeYT: { play(): void } }).__fakeYT.play());
+    await expect(p.getByText("Aula concluída: você assistiu ao vídeo.")).toBeVisible({ timeout: 20_000 });
+    await expect(p.getByRole("button", { name: "✓ Aula Concluída" })).toBeVisible();
+    await expect(p.getByText("Certificado Disponível!")).toBeVisible();
   });
 
   test("outro instrutor precisa se matricular no curso alheio", async () => {
@@ -209,7 +374,17 @@ test.describe.serial("Educarize de ponta a ponta", () => {
     await p.getByRole("button", { name: "Adicionar" }).click();
     await expect(p.locator(".courses-section").getByText(`Curso do Caio ${uid}`)).toBeVisible();
 
-    await p.getByRole("button", { name: "↓" }).first().click();
+    // Reordenação pelo teclado: pega o primeiro curso, desce uma posição e solta.
+    // Cada passo espera o aviso para leitores de tela antes do próximo.
+    const announcer = p.locator('[id^="DndLiveRegion"]');
+    await p.getByRole("button", { name: `Reordenar ${courseTitle}` }).focus();
+    await p.keyboard.press("Space");
+    await expect(announcer).toContainText("selecionado, na posição 1 de 2");
+    await p.keyboard.press("ArrowDown");
+    await expect(announcer).toContainText("movido para a posição 2 de 2");
+    await p.keyboard.press("Space");
+    await expect(announcer).toContainText("solto na posição 2 de 2");
+    await expect(p.locator(".course-item h4").first()).toHaveText(`Curso do Caio ${uid}`);
     const pathId = p.url().split("/learning-paths/")[1].split("/")[0];
     await expect
       .poll(async () => {
@@ -262,7 +437,7 @@ test.describe.serial("Educarize de ponta a ponta", () => {
     await anaRow.getByRole("button", { name: "Transferir Conteúdo" }).click();
     await anaRow.locator("select").selectOption({ label: "Caio Instrutor (INSTRUCTOR)" });
     await anaRow.getByRole("button", { name: "Transferir" }).click();
-    await expect(p.getByText("1 curso(s) e 0 trilha(s) transferidos.")).toBeVisible();
+    await expect(p.getByText(/\d+ curso\(s\) e 0 trilha\(s\) transferidos\./)).toBeVisible();
 
     await anaRow.getByRole("button", { name: "Deletar" }).click();
     await expect(p.getByText("Usuário deletado com sucesso!")).toBeVisible();
@@ -309,6 +484,24 @@ test.describe.serial("Educarize de ponta a ponta", () => {
 
     await login(bia, `bia${uid}@e2e.test`, "novaSenha9");
     await expect(p.getByRole("link", { name: "Favoritos" })).toBeVisible();
+  });
+
+  test("preferências de notificação por e-mail ficam salvas", async () => {
+    const p = bia.page;
+    await p.goto("/profile");
+    const progress = p.getByRole("checkbox", { name: /Progresso/ });
+    const messages = p.getByRole("checkbox", { name: /Mensagens diretas/ });
+    await expect(progress).not.toBeChecked();
+    await expect(messages).toBeChecked();
+
+    await progress.check();
+    await expect(p.getByText("Preferência salva.")).toBeVisible();
+    await messages.uncheck();
+    await expect(messages).toBeEnabled();
+
+    await p.reload();
+    await expect(p.getByRole("checkbox", { name: /Progresso/ })).toBeChecked();
+    await expect(p.getByRole("checkbox", { name: /Mensagens diretas/ })).not.toBeChecked();
   });
 
   test("nenhum erro de console ou resposta 5xx durante a navegação", () => {

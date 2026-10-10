@@ -1,5 +1,5 @@
 import { prisma } from "../config/database";
-import { CertificateService } from "./certificateService";
+import { CertificateService, pendingQuizzesForCertificate } from "./certificateService";
 import { NotificationService } from "./notificationService";
 import { LearningPathService } from "./learningPathService";
 import { HttpError } from "../utils/httpError";
@@ -12,7 +12,50 @@ async function assertEnrolledInLessonCourse(userId: string, lessonId: string): P
   }
 }
 
+/** Fração do vídeo que precisa ser assistida para a aula ser concluída automaticamente. */
+export const AUTO_COMPLETE_RATIO = 0.9;
+
 export class ProgressService {
+  /**
+   * Registra o andamento do vídeo: soma o tempo efetivamente assistido (enviado como incremento pelo player),
+   * guarda a posição para retomar e conclui a aula automaticamente ao atingir 90% da duração.
+   */
+  async recordVideoProgress(
+    userId: string,
+    lessonId: string,
+    data: { positionSeconds: number; durationSeconds: number; watchedDeltaSeconds: number }
+  ) {
+    await assertEnrolledInLessonCourse(userId, lessonId);
+
+    const existing = await prisma.userProgress.findUnique({
+      where: { userId_lessonId: { userId, lessonId } },
+    });
+
+    const duration = data.durationSeconds;
+    const watchedSeconds = Math.min(duration, (existing?.watchedSeconds ?? 0) + data.watchedDeltaSeconds);
+    const position = Math.min(data.positionSeconds, duration);
+
+    const progress = await prisma.userProgress.upsert({
+      where: { userId_lessonId: { userId, lessonId } },
+      create: {
+        userId,
+        lessonId,
+        watchedSeconds,
+        lastPositionSeconds: position,
+        videoDurationSeconds: duration,
+      },
+      update: { watchedSeconds, lastPositionSeconds: position, videoDurationSeconds: duration },
+    });
+
+    const reachedThreshold = watchedSeconds >= Math.floor(duration * AUTO_COMPLETE_RATIO);
+    if (!progress.completed && reachedThreshold) {
+      await this.markLessonCompleted(userId, lessonId);
+      return { ...progress, completed: true, autoCompleted: true };
+    }
+
+    return { ...progress, autoCompleted: false };
+  }
+
   async markLessonCompleted(userId: string, lessonId: string) {
     await assertEnrolledInLessonCourse(userId, lessonId);
 
@@ -85,7 +128,8 @@ export class ProgressService {
           userId,
           "Aula concluída!",
           `Você concluiu a aula "${lesson.title}" do curso "${lesson.module.course.title}". Continue assim!`,
-          "SUCCESS"
+          "SUCCESS",
+          "PROGRESS"
         ).catch(err => console.error("Erro ao criar notificação:", err));
 
         const certificate = await certificateService.checkAndGenerateCertificate(userId, lesson.module.courseId);
@@ -95,7 +139,8 @@ export class ProgressService {
             userId,
             "🎉 Parabéns! Certificado gerado!",
             `Você completou o curso "${lesson.module.course.title}" e seu certificado está disponível para download.`,
-            "SUCCESS"
+            "SUCCESS",
+            "CERTIFICATE"
           ).catch(err => console.error("Erro ao criar notificação de certificado:", err));
         }
 
@@ -171,6 +216,7 @@ export class ProgressService {
         completedLessons: 0,
         progressPercentage: 0,
         lessons: [],
+        pendingQuizzes: [],
       };
     }
 
@@ -207,6 +253,8 @@ export class ProgressService {
       completedLessons,
       progressPercentage,
       lessons: lessonsProgress,
+      // Quizzes que ainda faltam para o certificado (só em cursos que exigem aprovação).
+      pendingQuizzes: await pendingQuizzesForCertificate(userId, courseId),
     };
   }
 

@@ -17,7 +17,7 @@ export class QuizController {
 
   async create(req: Request, res: Response): Promise<void> {
     try {
-      const { moduleId, title, description, passingScore } = req.body;
+      const { moduleId, title, description, passingScore, maxAttempts, shuffleQuestions, shuffleOptions } = req.body;
       if (!moduleId || !title) {
         res.status(400).json({ error: "moduleId e title são obrigatórios" });
         return;
@@ -25,7 +25,7 @@ export class QuizController {
 
       const quiz = await quizService.create(
         moduleId,
-        { title, description, passingScore },
+        { title, description, passingScore, maxAttempts, shuffleQuestions, shuffleOptions },
         req.user!.userId,
         req.user!.role
       );
@@ -38,11 +38,11 @@ export class QuizController {
   async update(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { title, description, passingScore } = req.body;
+      const { title, description, passingScore, maxAttempts, shuffleQuestions, shuffleOptions } = req.body;
 
       const updated = await quizService.update(
         id,
-        { title, description, passingScore },
+        { title, description, passingScore, maxAttempts, shuffleQuestions, shuffleOptions },
         req.user!.userId,
         req.user!.role
       );
@@ -64,7 +64,7 @@ export class QuizController {
 
   async addQuestion(req: Request, res: Response): Promise<void> {
     try {
-      const { quizId, question, options, correctAnswer, order } = req.body;
+      const { quizId, question, options, correctAnswer, explanation, order } = req.body;
       if (!quizId || !question || !options || correctAnswer === undefined) {
         res.status(400).json({ error: "quizId, question, options e correctAnswer são obrigatórios" });
         return;
@@ -77,7 +77,7 @@ export class QuizController {
 
       const questionData = await quizService.addQuestion(
         quizId,
-        { question, options, correctAnswer, order },
+        { question, options, correctAnswer, explanation, order },
         req.user!.userId,
         req.user!.role
       );
@@ -90,7 +90,7 @@ export class QuizController {
   async updateQuestion(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { question, options, correctAnswer, order } = req.body;
+      const { question, options, correctAnswer, explanation, order } = req.body;
 
       if (options && !Array.isArray(options)) {
         res.status(400).json({ error: "options deve ser um array" });
@@ -99,7 +99,7 @@ export class QuizController {
 
       const updated = await quizService.updateQuestion(
         id,
-        { question, options, correctAnswer, order },
+        { question, options, correctAnswer, explanation, order },
         req.user!.userId,
         req.user!.role
       );

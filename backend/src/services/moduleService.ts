@@ -2,6 +2,10 @@ import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
 import { AuthUser, assertCourseContentAccess } from "../utils/courseAccess";
 import { HttpError } from "../utils/httpError";
+import { isSameIdSet } from "../utils";
+import { FileService } from "./fileService";
+
+const fileService = new FileService();
 
 export class ModuleService {
   async listByCourse(courseId: string, user: AuthUser) {
@@ -93,6 +97,32 @@ export class ModuleService {
     return updated;
   }
 
+  /** Reordena todos os módulos do curso de uma vez (ordem = posição na lista). */
+  async reorder(courseId: string, moduleIds: string[], userId: string, userRole: string) {
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { instructorId: true, modules: { select: { id: true } } },
+    });
+
+    if (!course) {
+      throw new HttpError(404, "Curso não encontrado");
+    }
+
+    if (course.instructorId !== userId && userRole !== "ADMIN") {
+      throw new HttpError(403, "Sem permissão para reordenar os módulos deste curso");
+    }
+
+    if (!isSameIdSet(course.modules.map((m) => m.id), moduleIds)) {
+      throw new HttpError(400, "A lista deve conter exatamente os módulos atuais do curso");
+    }
+
+    await prisma.$transaction(
+      moduleIds.map((id, index) => prisma.module.update({ where: { id }, data: { order: index } }))
+    );
+
+    return this.listByCourse(courseId, { userId, role: userRole });
+  }
+
   async delete(id: string, userId: string, userRole: string) {
     const module = await prisma.module.findUnique({
       where: { id },
@@ -108,7 +138,9 @@ export class ModuleService {
     }
 
     const moduleTitle = module.title;
+    const fileIds = await fileService.attachmentFileIds({ lesson: { moduleId: id } });
     await prisma.module.delete({ where: { id } });
+    await fileService.deleteAllIfUnused(fileIds);
 
     await logActivity({
       action: "MODULE_DELETED",

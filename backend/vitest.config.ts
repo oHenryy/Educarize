@@ -14,6 +14,7 @@ export default defineConfig({
       DATABASE_URL: testPaths.databaseUrl,
       JWT_SECRET: "test-secret",
       CERTIFICATES_DIR: testPaths.certificates,
+      UPLOAD_DIR: testPaths.uploads,
       // O limitador é testado isoladamente; aqui não pode atrapalhar os demais testes.
       AUTH_RATE_LIMIT_MAX: "10000",
     },

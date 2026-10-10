@@ -10,8 +10,58 @@ export type Session = { page: Page; label: string };
 /** Erros de console, exceções da página e respostas 5xx coletados durante os testes. */
 export const runtimeProblems: string[] = [];
 
+/**
+ * Substituto da IFrame API do YouTube: o teste não depende da internet e controla a reprodução
+ * por window.__fakeYT (vídeo de 20s tocando a 1,5x).
+ */
+const FAKE_YOUTUBE_API = `
+(function () {
+  var PS = { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2 };
+  function Player(el, opts) {
+    var iframe = document.createElement("iframe");
+    iframe.src = "https://www.youtube.com/embed/" + opts.videoId;
+    iframe.title = "YouTube video player";
+    el.replaceWith(iframe);
+    var s = { time: (opts.playerVars && opts.playerVars.start) || 0, duration: 20, status: -1, rate: 1.5, since: 0 };
+    function emit(data) {
+      if (opts.events && opts.events.onStateChange) opts.events.onStateChange({ data: data });
+    }
+    function now() {
+      if (s.status !== PS.PLAYING) return s.time;
+      var t = s.time + ((performance.now() - s.since) / 1000) * s.rate;
+      if (t < s.duration) return t;
+      s.time = s.duration;
+      s.status = PS.ENDED;
+      setTimeout(function () { emit(PS.ENDED); });
+      return s.duration;
+    }
+    function set(status) {
+      s.time = now();
+      s.status = status;
+      s.since = performance.now();
+      emit(status);
+    }
+    this.getCurrentTime = now;
+    this.getDuration = function () { return s.duration; };
+    this.getPlayerState = function () { now(); return s.status; };
+    this.destroy = function () { iframe.remove(); };
+    window.__fakeYT = {
+      start: s.time,
+      play: function () { set(PS.PLAYING); },
+      pause: function () { set(PS.PAUSED); },
+      time: now,
+    };
+  }
+  window.YT = { Player: Player, PlayerState: PS };
+  setTimeout(function () { if (window.onYouTubeIframeAPIReady) window.onYouTubeIframeAPIReady(); });
+})();
+`;
+
 export async function newSession(browser: Browser, label: string): Promise<Session> {
   const context = await browser.newContext({ acceptDownloads: true });
+  await context.route("https://www.youtube.com/iframe_api", (route) =>
+    route.fulfill({ contentType: "application/javascript", body: FAKE_YOUTUBE_API })
+  );
   const page = await context.newPage();
   page.on("dialog", (dialog) => dialog.accept());
   page.on("console", (msg) => {

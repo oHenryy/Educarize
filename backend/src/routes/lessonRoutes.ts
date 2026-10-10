@@ -12,6 +12,7 @@ router.use(authenticate);
 router.get("/module/:moduleId", (req, res) => lessonController.listByModule(req, res));
 router.get("/:id", (req, res) => lessonController.getById(req, res));
 router.post("/", authorize(["INSTRUCTOR", "ADMIN"]), validate({ body: s.createLessonBody }), (req, res) => lessonController.create(req, res));
+router.put("/reorder", authorize(["INSTRUCTOR", "ADMIN"]), validate({ body: s.reorderLessonsBody }), (req, res) => lessonController.reorder(req, res));
 router.put("/:id", authorize(["INSTRUCTOR", "ADMIN"]), validate({ body: s.updateLessonBody }), (req, res) => lessonController.update(req, res));
 router.delete("/:id", authorize(["INSTRUCTOR", "ADMIN"]), (req, res) => lessonController.delete(req, res));
 router.get("/:id/attachments", (req, res) => lessonController.getAttachments(req, res));

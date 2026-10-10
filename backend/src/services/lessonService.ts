@@ -1,7 +1,10 @@
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
 import { HttpError } from "../utils/httpError";
-import { isSafeUrl } from "../utils";
+import { isSafeUrl, isSameIdSet } from "../utils";
+import { FileService, fileKind, fileUrl } from "./fileService";
+
+const fileService = new FileService();
 import {
   AuthUser,
   assertCourseContentAccess,
@@ -27,6 +30,32 @@ export class LessonService {
       },
       orderBy: { order: "asc" },
     });
+  }
+
+  /** Reordena todas as aulas do módulo de uma vez (ordem = posição na lista). */
+  async reorder(moduleId: string, lessonIds: string[], userId: string, userRole: string) {
+    const module = await prisma.module.findUnique({
+      where: { id: moduleId },
+      select: { course: { select: { instructorId: true } }, lessons: { select: { id: true } } },
+    });
+
+    if (!module) {
+      throw new HttpError(404, "Módulo não encontrado");
+    }
+
+    if (module.course.instructorId !== userId && userRole !== "ADMIN") {
+      throw new HttpError(403, "Sem permissão para reordenar as aulas deste módulo");
+    }
+
+    if (!isSameIdSet(module.lessons.map((l) => l.id), lessonIds)) {
+      throw new HttpError(400, "A lista deve conter exatamente as aulas atuais do módulo");
+    }
+
+    await prisma.$transaction(
+      lessonIds.map((id, index) => prisma.lesson.update({ where: { id }, data: { order: index } }))
+    );
+
+    return this.listByModule(moduleId, { userId, role: userRole });
   }
 
   async getById(id: string, user: AuthUser) {
@@ -207,7 +236,9 @@ export class LessonService {
     }
 
     const lessonTitle = lesson.title;
+    const fileIds = await fileService.attachmentFileIds({ lessonId: id });
     await prisma.lesson.delete({ where: { id } });
+    await fileService.deleteAllIfUnused(fileIds);
 
     await logActivity({
       action: "LESSON_DELETED",
@@ -223,15 +254,17 @@ export class LessonService {
     data: {
       name: string;
       description?: string;
-      fileUrl: string;
-      fileType: string;
+      fileId?: string;
+      fileUrl?: string;
+      fileType?: string;
       fileSize?: number;
       category?: string;
       order?: number;
       thumbnailUrl?: string;
     },
     userId: string,
-    userRole: string
+    userRole: string,
+    requestOrigin = ""
   ) {
     const lesson = await prisma.lesson.findUnique({
       where: { id: lessonId },
@@ -248,6 +281,15 @@ export class LessonService {
 
     if (lesson.module.course.instructorId !== userId && userRole !== "ADMIN") {
       throw new HttpError(403, "Sem permissão para adicionar anexo nesta aula");
+    }
+
+    // Arquivo enviado ao Educarize: link, tipo e tamanho vêm do próprio arquivo.
+    if (data.fileId) {
+      const file = await fileService.assertUsable(data.fileId, "ATTACHMENT", { userId, role: userRole });
+      data = { ...data, fileUrl: fileUrl(file.id, requestOrigin), fileType: fileKind(file), fileSize: file.size };
+    }
+    if (!data.fileUrl || !data.fileType) {
+      throw new HttpError(400, "Envie um arquivo ou informe o link e o tipo do arquivo");
     }
 
     assertSafeUrl(data.fileUrl, "Link do arquivo");
@@ -269,6 +311,7 @@ export class LessonService {
         category: data.category,
         order: data.order ?? (maxOrder ? maxOrder.order + 1 : 0),
         thumbnailUrl: data.thumbnailUrl,
+        fileId: data.fileId,
         lessonId,
       },
     });
@@ -313,9 +356,13 @@ export class LessonService {
     assertSafeUrl(data.fileUrl, "Link do arquivo");
     assertSafeUrl(data.thumbnailUrl, "Link da miniatura");
 
-    return await prisma.lessonAttachment.update({
+    // Trocar o link de um anexo enviado o transforma em link externo: o arquivo antigo é descartado.
+    const replacesFile = !!attachment.fileId && !!data.fileUrl && data.fileUrl !== attachment.fileUrl;
+
+    const updated = await prisma.lessonAttachment.update({
       where: { id: attachmentId },
       data: {
+        ...(replacesFile && { fileId: null }),
         ...(data.name && { name: data.name }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.fileUrl && { fileUrl: data.fileUrl }),
@@ -326,6 +373,8 @@ export class LessonService {
         ...(data.thumbnailUrl !== undefined && { thumbnailUrl: data.thumbnailUrl }),
       },
     });
+    if (replacesFile) await fileService.deleteIfUnused(attachment.fileId);
+    return updated;
   }
 
   async incrementAttachmentDownload(attachmentId: string, user: AuthUser) {
@@ -387,6 +436,7 @@ export class LessonService {
     await prisma.lessonAttachment.delete({
       where: { id: attachmentId },
     });
+    await fileService.deleteIfUnused(attachment.fileId);
   }
 }
 

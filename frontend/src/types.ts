@@ -44,6 +44,7 @@ export interface Course {
   difficulty?: string;
   status?: string;
   category?: CourseCategory | null;
+  requireQuizzesForCertificate?: boolean;
   instructor?: Pick<User, "id" | "name" | "avatarUrl">;
   modules?: Module[];
 }
@@ -59,6 +60,8 @@ export interface CourseProgress {
   completedLessons: number;
   progressPercentage: number;
   lessons: LessonProgress[];
+  /** Quizzes que faltam para o certificado (cursos que exigem aprovação). */
+  pendingQuizzes?: { id: string; title: string; moduleId: string }[];
 }
 
 export interface LessonComment {
@@ -80,6 +83,8 @@ export interface QuizQuestion {
   options: string[];
   /** Enviado apenas para o dono do curso ou administradores. */
   correctAnswer?: number;
+  /** Explicação da resposta (apenas para o dono do curso ou administradores). */
+  explanation?: string | null;
   order: number;
 }
 
@@ -88,8 +93,25 @@ export interface Quiz {
   title: string;
   description?: string | null;
   passingScore: number;
+  /** Limite de tentativas por aluno (nulo = ilimitado). */
+  maxAttempts: number | null;
+  shuffleQuestions: boolean;
+  shuffleOptions: boolean;
   moduleId: string;
   questions: QuizQuestion[];
+  /** Situação do usuário atual. */
+  attemptsUsed?: number;
+  attemptsRemaining?: number | null;
+  passed?: boolean;
+}
+
+export interface QuizQuestionResult {
+  questionId: string;
+  selected: number | null;
+  correct: boolean;
+  /** Presentes só quando o gabarito é revelado (aprovação ou tentativas esgotadas). */
+  correctAnswer?: number;
+  explanation?: string | null;
 }
 
 export interface QuizAttempt {
@@ -100,6 +122,11 @@ export interface QuizAttempt {
   score: number;
   passed: boolean;
   completedAt: string;
+  /** Presentes na resposta do envio de uma tentativa. */
+  attemptsUsed?: number;
+  attemptsRemaining?: number | null;
+  answersRevealed?: boolean;
+  results?: QuizQuestionResult[];
 }
 
 export interface Certificate {
@@ -181,14 +208,32 @@ export interface CourseReview {
   user: Pick<User, "id" | "name" | "avatarUrl">;
 }
 
+export type NotificationCategory = "MESSAGE" | "COMMENT" | "CERTIFICATE" | "REVIEW" | "QUIZ" | "ENROLLMENT" | "PROGRESS";
+
+export interface NotificationPreference {
+  category: NotificationCategory;
+  email: boolean;
+}
+
 export interface Notification {
   id: string;
   title: string;
   message: string;
   type: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
+  category?: NotificationCategory | "GENERAL";
   read: boolean;
   userId: string;
   createdAt: string;
+}
+
+/** Resposta de POST /files. */
+export interface UploadedFile {
+  id: string;
+  url: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  fileType: string;
 }
 
 export interface LessonAttachment {
@@ -202,6 +247,8 @@ export interface LessonAttachment {
   order: number;
   thumbnailUrl?: string | null;
   downloadCount: number;
+  /** Preenchido quando o material foi enviado ao Educarize (e não é um link externo). */
+  fileId?: string | null;
   lessonId: string;
   createdAt: string;
   updatedAt: string;

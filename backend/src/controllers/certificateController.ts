@@ -1,11 +1,19 @@
 import { Request, Response } from "express";
-import { CertificateService, getCertificateFilePath } from "../services/certificateService";
-import fs from "fs";
+import { CertificateService, formatVerificationCode, openCertificatePdf } from "../services/certificateService";
+import { contentDisposition } from "../utils";
 import { sendError } from "../utils/httpError";
 
 const certificateService = new CertificateService();
 
 export const certificateController = {
+  async verify(req: Request, res: Response) {
+    try {
+      res.json(await certificateService.verify(req.params.code));
+    } catch (error) {
+      sendError(res, error);
+    }
+  },
+
   async getMyCertificates(req: Request, res: Response) {
     try {
       const userId = req.user!.userId;
@@ -26,7 +34,12 @@ export const certificateController = {
       }
 
       const certificate = await certificateService.generateCertificate(userId, courseId);
-      res.json({ id: certificate.id, pdfUrl: certificate.pdfUrl, message: "Certificado gerado com sucesso" });
+      res.json({
+        id: certificate.id,
+        pdfUrl: certificate.pdfUrl,
+        verificationCode: formatVerificationCode(certificate.verificationCode),
+        message: "Certificado gerado com sucesso",
+      });
     } catch (error) {
       sendError(res, error);
     }
@@ -38,24 +51,22 @@ export const certificateController = {
       const { id } = req.params;
 
       const certificate = await certificateService.getCertificateById(id, userId);
-      const filePath = getCertificateFilePath(certificate.pdfUrl);
+      const pdf = await openCertificatePdf(certificate.pdfUrl);
 
-      if (!fs.existsSync(filePath)) {
+      if (!pdf) {
         return res.status(404).json({ error: "Arquivo do certificado não encontrado" });
       }
-
-      const asciiName = `certificado_${certificate.courseTitle}`
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-zA-Z0-9_-]+/g, "_");
-      const utf8Name = encodeURIComponent(`certificado_${certificate.courseTitle.replace(/\s+/g, "_")}.pdf`);
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${asciiName}.pdf"; filename*=UTF-8''${utf8Name}`
+        contentDisposition("attachment", `certificado_${certificate.courseTitle.replace(/\s+/g, "_")}.pdf`)
       );
-      res.sendFile(filePath);
+      pdf.on("error", (err) => {
+        console.error("Erro ao ler o certificado:", err);
+        res.destroy(err);
+      });
+      pdf.pipe(res);
     } catch (error) {
       sendError(res, error);
     }

@@ -1,4 +1,4 @@
-# Infraestrutura de desenvolvimento: PostgreSQL e Redis.
+# Infraestrutura de desenvolvimento: PostgreSQL, Redis e Silo (storage S3 para capas, materiais e certificados).
 #   docker compose up -d
 # O backend e o frontend continuam rodando com `npm run dev` (veja o README).
 services:
@@ -32,6 +32,28 @@ services:
       timeout: 3s
       retries: 10
 
+  # Storage compatível com S3: Silo (pgsty/silo), fork comunitário do MinIO mantido pela Pigsty.
+  # API S3 em http://localhost:9000; console web em http://localhost:9001 (usuário educarize, senha educarize-silo).
+  # O bucket é criado pelo backend na primeira execução (S3_CREATE_BUCKET=true no .env).
+  silo:
+    image: pgsty/silo:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: educarize
+      MINIO_ROOT_PASSWORD: educarize-silo
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - silo-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   postgres-data:
   redis-data:
+  silo-data:

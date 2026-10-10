@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { CourseService, CreateCourseData, UpdateCourseData } from "../services/courseService";
 import { sendError } from "../utils/httpError";
+import { queryString } from "../utils";
 
 const courseService = new CourseService();
 
@@ -15,7 +16,7 @@ export class CourseController {
           categoryId: categoryId as string,
           difficulty: difficulty as string,
           status: status as string,
-          search: search as string,
+          search: queryString(search),
           instructorId: instructorId as string,
         },
         req.user!,
@@ -46,6 +47,7 @@ export class CourseController {
         durationHours,
         difficulty,
         categoryId,
+        requireQuizzesForCertificate,
       } = req.body;
 
       if (!title) {
@@ -60,6 +62,7 @@ export class CourseController {
         durationHours,
         difficulty,
         categoryId,
+        requireQuizzesForCertificate,
         instructorId: req.user!.userId,
       };
 
@@ -80,6 +83,7 @@ export class CourseController {
         difficulty,
         categoryId,
         status,
+        requireQuizzesForCertificate,
       } = req.body;
 
       const data: UpdateCourseData = {
@@ -90,6 +94,7 @@ export class CourseController {
         difficulty,
         categoryId,
         status,
+        requireQuizzesForCertificate,
       };
 
       const course = await courseService.updateCourse(

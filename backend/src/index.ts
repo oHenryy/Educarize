@@ -4,6 +4,8 @@ import app from "./app";
 import { config } from "./config/env";
 import { setupSocketIO } from "./socket/socketHandler";
 import { attachRedisAdapter } from "./config/redis";
+import { startFileCleanupJob } from "./jobs/fileCleanup";
+import { verifyStorage } from "./storage/fileStorage";
 
 const PORT = config.port;
 
@@ -22,6 +24,8 @@ if (process.env.REDIS_URL) {
 }
 
 setupSocketIO(io);
+void verifyStorage();
+startFileCleanupJob();
 
 httpServer.listen(PORT, () => {
   console.log(`Educarize backend rodando na porta ${PORT}`);

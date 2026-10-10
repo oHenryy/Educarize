@@ -30,7 +30,27 @@ export const config = {
   port: process.env.PORT || 4000,
   jwtSecret: resolveJwtSecret(),
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
+  /** Pasta antiga dos certificados (lida apenas para PDFs emitidos antes do storage). */
   certificatesDir: process.env.CERTIFICATES_DIR || "certificates",
+
+  // Arquivos (capas, anexos e certificados): disco local ou, com S3_BUCKET, storage compatível com S3.
+  uploadDir: process.env.UPLOAD_DIR || "uploads",
+  /** Endereço público da API para montar os links dos arquivos (padrão: o host da requisição). */
+  publicApiUrl: (process.env.PUBLIC_API_URL || "").replace(/\/$/, ""),
+  /** Intervalo da limpeza de arquivos sem uso (0 desativa a execução automática). */
+  fileCleanupIntervalHours: Number(process.env.FILE_CLEANUP_INTERVAL_HOURS ?? 6),
+  /** Idade mínima para um arquivo sem uso ser removido (dá tempo de terminar o formulário). */
+  fileCleanupGraceHours: Number(process.env.FILE_CLEANUP_GRACE_HOURS ?? 24),
+  s3: {
+    bucket: process.env.S3_BUCKET || "",
+    region: process.env.S3_REGION || "us-east-1",
+    endpoint: process.env.S3_ENDPOINT || "",
+    accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
+    forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
+    /** Cria o bucket se ele não existir (útil com Silo/MinIO locais; em produção, crie-o antes). */
+    createBucket: process.env.S3_CREATE_BUCKET === "true",
+  },
   authRateLimitMax: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,
   authRateLimitWindowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS) || minutes(15),
 

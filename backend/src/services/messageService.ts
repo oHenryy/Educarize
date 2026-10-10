@@ -50,7 +50,8 @@ export class MessageService {
         receiverId,
         "Nova mensagem",
         `${message.sender.name} enviou uma mensagem para você.`,
-        "INFO"
+        "INFO",
+        "MESSAGE"
       )
       .catch((err) => console.error("Erro ao criar notificação:", err));
 

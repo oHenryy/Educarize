@@ -33,6 +33,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql://educarize:educarize@localhost:5432/educarize
       TEST_REDIS_URL: redis://localhost:6379
+      TEST_S3_ENDPOINT: http://localhost:9000
     defaults:
       run:
         working-directory: backend
@@ -43,6 +44,11 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: backend/package-lock.json
+      # Os "services" do Actions não aceitam o comando do servidor; o Silo (storage S3) sobe aqui.
+      - name: Subir Silo (storage S3)
+        run: |
+          docker run -d --name silo -p 9000:9000             -e MINIO_ROOT_USER=educarize -e MINIO_ROOT_PASSWORD=educarize-silo             pgsty/silo:latest server /data
+          timeout 60 sh -c 'until curl -fs http://localhost:9000/minio/health/live; do sleep 1; done'
       - run: npm ci
       - run: npx prisma generate
       - run: npm run typecheck
@@ -63,6 +69,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm test
       - run: npm run build
 
   e2e:
@@ -89,6 +96,7 @@ jobs:
     env:
       E2E_DATABASE_URL: postgresql://educarize:educarize@localhost:5432/educarize
       E2E_REDIS_URL: redis://localhost:6379
+      E2E_S3_ENDPOINT: http://localhost:9000
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -99,6 +107,11 @@ jobs:
             backend/package-lock.json
             frontend/package-lock.json
             e2e/package-lock.json
+      # Os "services" do Actions não aceitam o comando do servidor; o Silo (storage S3) sobe aqui.
+      - name: Subir Silo (storage S3)
+        run: |
+          docker run -d --name silo -p 9000:9000             -e MINIO_ROOT_USER=educarize -e MINIO_ROOT_PASSWORD=educarize-silo             pgsty/silo:latest server /data
+          timeout 60 sh -c 'until curl -fs http://localhost:9000/minio/health/live; do sleep 1; done'
       - name: Instalar dependências
         run: |
           npm ci --prefix backend

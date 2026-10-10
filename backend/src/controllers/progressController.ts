@@ -23,6 +23,21 @@ export class ProgressController {
     }
   }
 
+  async recordVideo(req: Request, res: Response): Promise<void> {
+    try {
+      const { lessonId, positionSeconds, durationSeconds, watchedDeltaSeconds } = req.body;
+      res.json(
+        await progressService.recordVideoProgress(req.user!.userId, lessonId, {
+          positionSeconds,
+          durationSeconds,
+          watchedDeltaSeconds,
+        })
+      );
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
+
   async markIncomplete(req: Request, res: Response): Promise<void> {
     try {
       const { lessonId } = req.body;

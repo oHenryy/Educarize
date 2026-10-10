@@ -5,6 +5,7 @@ import { useAuth } from "../context/useAuth";
 import type { LearningPath, LearningPathCourse, Course, CoursesPage } from "../types";
 import { useDebouncedValue } from "../utils/useDebouncedValue";
 import { useToast } from "../context/useToast";
+import SortableList from "../components/SortableList";
 
 export default function LearningPathCoursesPage() {
   const { id } = useParams<{ id: string }>();
@@ -95,25 +96,16 @@ export default function LearningPathCoursesPage() {
     }
   };
 
-  const handleReorder = async (pathCourseId: string, direction: "up" | "down") => {
+  // Reordenação otimista: a lista muda na hora e volta ao estado anterior se a API recusar.
+  const handleReorder = async (reordered: LearningPathCourse[]) => {
+    if (!learningPath) return;
+    const previous = learningPath;
+    setLearningPath({ ...learningPath, courses: reordered.map((pc, index) => ({ ...pc, order: index })) });
     try {
-      const pathCourse = learningPath?.courses?.find((pc) => pc.id === pathCourseId);
-      if (!pathCourse || !learningPath?.courses) return;
-
-      const currentIndex = learningPath.courses.findIndex((pc) => pc.id === pathCourseId);
-      if (currentIndex === -1) return;
-
-      const newIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-      if (newIndex < 0 || newIndex >= learningPath.courses.length) return;
-
       // Reordenação atômica no backend (uma única requisição/transação).
-      const courseIds = learningPath.courses.map((pc) => pc.courseId);
-      [courseIds[currentIndex], courseIds[newIndex]] = [courseIds[newIndex], courseIds[currentIndex]];
-
-      await api.put(`/learning-paths/${id}/courses/reorder`, { courseIds });
-
-      fetchLearningPath();
+      await api.put(`/learning-paths/${id}/courses/reorder`, { courseIds: reordered.map((pc) => pc.courseId) });
     } catch (err) {
+      setLearningPath(previous);
       showToast(getErrorMessage(err, "Erro ao reordenar curso"), "error");
     }
   };
@@ -226,12 +218,18 @@ export default function LearningPathCoursesPage() {
         )}
 
         {learningPath.courses && learningPath.courses.length > 0 ? (
-          <div className="courses-list">
-            {learningPath.courses
-              .sort((a, b) => a.order - b.order)
-              .map((pathCourse: LearningPathCourse, index: number) => (
-                <div key={pathCourse.id} className="course-item">
-                  <div className="course-order">{pathCourse.order}</div>
+          <SortableList
+            className="courses-list"
+            items={[...learningPath.courses].sort((a, b) => a.order - b.order)}
+            getId={(pathCourse) => pathCourse.id}
+            getLabel={(pathCourse) => pathCourse.course.title}
+            onReorder={handleReorder}
+            itemClassName={() => "course-item"}
+          >
+            {(pathCourse, handle, index) => (
+                <>
+                  {handle}
+                  <div className="course-order">{index + 1}</div>
                   <div className="course-info">
                     <h4>{pathCourse.course.title}</h4>
                     <div className="course-meta">
@@ -245,31 +243,15 @@ export default function LearningPathCoursesPage() {
                   </div>
                   <div className="course-actions">
                     <button
-                      onClick={() => handleReorder(pathCourse.id, "up")}
-                      disabled={index === 0}
-                      className="btn-icon"
-                      title="Mover para cima"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      onClick={() => handleReorder(pathCourse.id, "down")}
-                      disabled={index === learningPath.courses!.length - 1}
-                      className="btn-icon"
-                      title="Mover para baixo"
-                    >
-                      ↓
-                    </button>
-                    <button
                       onClick={() => handleRemoveCourse(pathCourse.courseId)}
                       className="btn-danger"
                     >
                       Remover
                     </button>
                   </div>
-                </div>
-              ))}
-          </div>
+                </>
+            )}
+          </SortableList>
         ) : (
           <p className="muted">Nenhum curso adicionado ainda.</p>
         )}

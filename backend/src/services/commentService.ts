@@ -134,7 +134,8 @@ export class CommentService {
           parentComment.userId,
           "Nova resposta no seu comentário",
           `${comment.user.name} respondeu seu comentário na aula "${lesson?.title || "Aula"}" do curso "${lesson?.module.course.title || "Curso"}".`,
-          "INFO"
+          "INFO",
+          "COMMENT"
         ).catch(err => console.error("Erro ao criar notificação de resposta:", err));
       }
     } else if (lesson && lesson.module.course.instructorId && lesson.module.course.instructorId !== userId) {
@@ -142,7 +143,8 @@ export class CommentService {
         lesson.module.course.instructorId,
         "Novo comentário na sua aula",
         `${comment.user.name} comentou na aula "${lesson.title}" do curso "${lesson.module.course.title}".`,
-        "INFO"
+        "INFO",
+        "COMMENT"
       ).catch(err => console.error("Erro ao criar notificação para instrutor:", err));
     }
 

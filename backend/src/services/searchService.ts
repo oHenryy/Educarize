@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { matchingNoteIds, paginateRanked, rankedIds, sortByIds } from "../utils/textSearch";
 
 export interface SearchFilters {
   query?: string;
@@ -33,12 +34,6 @@ export class SearchService {
       where.instructorId = filters.instructorId;
     }
 
-    if (filters.query) {
-      where.OR = [
-        { title: { contains: filters.query, mode: "insensitive" } },
-        { description: { contains: filters.query, mode: "insensitive" } },
-      ];
-    }
 
     if (filters.tags && filters.tags.length > 0) {
       where.tags = {
@@ -75,36 +70,47 @@ export class SearchService {
       where.id = { in: courseIdsByRating };
     }
 
-    const [courses, total] = await Promise.all([
-      prisma.course.findMany({
-        where,
-        include: {
-          instructor: {
-            select: {
-              id: true,
-              name: true,
-              avatarUrl: true,
-            },
-          },
-          category: true,
-          tags: {
-            include: {
-              tag: true,
-            },
-          },
-          _count: {
-            select: {
-              enrollments: true,
-              modules: true,
-            },
-          },
+    const include = {
+      instructor: {
+        select: {
+          id: true,
+          name: true,
+          avatarUrl: true,
         },
-        skip,
-        take: limit,
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.course.count({ where }),
-    ]);
+      },
+      category: true,
+      tags: {
+        include: {
+          tag: true,
+        },
+      },
+      _count: {
+        select: {
+          enrollments: true,
+          modules: true,
+        },
+      },
+    };
+
+    let courses;
+    let total: number;
+    if (filters.query?.trim()) {
+      // Ordem por relevância; os demais filtros são aplicados sobre os resultados da busca.
+      const ranked = await paginateRanked(
+        await rankedIds("Course", filters.query),
+        async (ids) =>
+          (await prisma.course.findMany({ where: { AND: [where, { id: { in: ids } }] }, select: { id: true } })).map((c) => c.id),
+        page,
+        limit
+      );
+      courses = sortByIds(await prisma.course.findMany({ where: { id: { in: ranked.pageIds } }, include }), ranked.pageIds);
+      total = ranked.total;
+    } else {
+      [courses, total] = await Promise.all([
+        prisma.course.findMany({ where, include, skip, take: limit, orderBy: { createdAt: "desc" } }),
+        prisma.course.count({ where }),
+      ]);
+    }
 
     const ratingStats = await prisma.courseReview.groupBy({
       by: ["courseId"],
@@ -135,11 +141,9 @@ export class SearchService {
   }
 
   async searchLessons(query: string, courseId?: string) {
+    const ids = await rankedIds("Lesson", query);
     const where: any = {
-      OR: [
-        { title: { contains: query, mode: "insensitive" } },
-        { description: { contains: query, mode: "insensitive" } },
-      ],
+      id: { in: ids },
       module: {
         course: { status: "PUBLISHED" },
         ...(courseId && { courseId }),
@@ -174,21 +178,15 @@ export class SearchService {
           },
         },
       },
-      take: 50,
     });
 
-    return lessons;
+    return sortByIds(lessons, ids).slice(0, 50);
   }
 
   async searchNotes(query: string, userId: string) {
+    const ids = await matchingNoteIds(userId, query);
     const notes = await prisma.note.findMany({
-      where: {
-        userId,
-        content: {
-          contains: query,
-          mode: "insensitive",
-        },
-      },
+      where: { id: { in: ids } },
       include: {
         lesson: {
           select: {
@@ -209,10 +207,9 @@ export class SearchService {
           },
         },
       },
-      take: 50,
     });
 
-    return notes;
+    return sortByIds(notes, ids);
   }
 
   async getPopularTags(limit: number = 20) {
@@ -234,21 +231,17 @@ export class SearchService {
   }
 
   async getSearchSuggestions(query: string) {
+    const courseIds = await rankedIds("Course", query, 100);
     const [courses, tags] = await Promise.all([
-      prisma.course.findMany({
-        where: {
-          status: "PUBLISHED",
-          OR: [
-            { title: { contains: query, mode: "insensitive" } },
-            { description: { contains: query, mode: "insensitive" } },
-          ],
-        },
-        select: {
-          id: true,
-          title: true,
-        },
-        take: 5,
-      }),
+      prisma.course
+        .findMany({
+          where: { status: "PUBLISHED", id: { in: courseIds } },
+          select: {
+            id: true,
+            title: true,
+          },
+        })
+        .then((found) => sortByIds(found, courseIds).slice(0, 5)),
       prisma.tag.findMany({
         where: {
           name: {

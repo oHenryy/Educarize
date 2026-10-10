@@ -47,6 +47,16 @@ export class ModuleController {
     }
   }
 
+  async reorder(req: Request, res: Response): Promise<void> {
+    try {
+      const { courseId, moduleIds } = req.body;
+      const modules = await moduleService.reorder(courseId, moduleIds, req.user!.userId, req.user!.role);
+      res.json(modules);
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
+
   async delete(req: Request, res: Response): Promise<void> {
     try {
       await moduleService.delete(req.params.id, req.user!.userId, req.user!.role);
