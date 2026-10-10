@@ -111,6 +111,7 @@ export class NoteService {
     if (search) {
       where.content = {
         contains: search,
+        mode: "insensitive",
       };
     }
 

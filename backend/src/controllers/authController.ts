@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import type { Role } from "@prisma/client";
 import { AuthService, LoginData, RegisterData } from "../services/authService";
 import { SessionService } from "../services/sessionService";
 import { prisma } from "../config/database";
@@ -62,9 +63,25 @@ export class AuthController {
 
   async getUsers(req: Request, res: Response): Promise<void> {
     try {
-      // E-mail só é exposto para administradores.
+      // E-mail só é exposto (e pesquisável) para administradores.
       const isAdmin = req.user!.role === "ADMIN";
+      const { search, roles, limit } = req.query as unknown as {
+        search?: string;
+        roles?: Role[];
+        limit?: number;
+      };
+
       const users = await prisma.user.findMany({
+        where: {
+          id: { not: req.user!.userId },
+          ...(roles && { role: { in: roles } }),
+          ...(search && {
+            OR: [
+              { name: { contains: search, mode: "insensitive" as const } },
+              ...(isAdmin ? [{ email: { contains: search, mode: "insensitive" as const } }] : []),
+            ],
+          }),
+        },
         select: {
           id: true,
           name: true,
@@ -73,6 +90,7 @@ export class AuthController {
           role: true,
         },
         orderBy: { name: "asc" },
+        take: limit ?? 20,
       });
       res.json(users);
     } catch (error) {

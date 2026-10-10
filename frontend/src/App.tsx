@@ -5,6 +5,7 @@ import "./App.css";
 import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./context/useAuth";
 import { ToastProvider } from "./context/ToastContext";
+import { SocketProvider } from "./context/SocketContext";
 import LoginPage from "./pages/Login";
 import RegisterPage from "./pages/Register";
 import CatalogPage from "./pages/Catalog";
@@ -205,6 +206,7 @@ function Layout({ children }: { children: ReactNode }) {
 function App() {
   return (
     <AuthProvider>
+      <SocketProvider>
       <ToastProvider>
         <Layout>
           <Routes>
@@ -401,6 +403,7 @@ function App() {
           </Routes>
         </Layout>
       </ToastProvider>
+      </SocketProvider>
     </AuthProvider>
   );
 }

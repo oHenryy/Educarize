@@ -40,7 +40,7 @@ describe("administração de usuários", () => {
     expect(transfer.body).toEqual({ coursesTransferred: 1, learningPathsTransferred: 1 });
 
     const received = await api.get(`/courses?instructorId=${receiver.user.id}`).set(auth(receiver));
-    expect(received.body).toHaveLength(1);
+    expect(received.body.courses).toHaveLength(1);
 
     expect((await api.delete(`/admin/users/${author.user.id}`).set(auth(admin))).status).toBe(200);
   });

@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "../config/database";
+import { Prisma, Role } from "@prisma/client";
 import { logActivity } from "../utils/activityLogger";
+import { isEnumValue } from "../utils/enums";
 import { SessionService } from "./sessionService";
 import { HttpError } from "../utils/httpError";
 
@@ -258,11 +260,11 @@ export class AdminService {
 
   async getAllUsers(page: number = 1, limit: number = 20, search?: string) {
     const skip = (page - 1) * limit;
-    const where = search
+    const where: Prisma.UserWhereInput = search
       ? {
           OR: [
-            { name: { contains: search } },
-            { email: { contains: search } },
+            { name: { contains: search, mode: "insensitive" } },
+            { email: { contains: search, mode: "insensitive" } },
           ],
         }
       : {};
@@ -362,8 +364,7 @@ export class AdminService {
       throw new HttpError(400, "Você não pode alterar o seu próprio papel");
     }
 
-    const validRoles = ["ADMIN", "INSTRUCTOR", "STUDENT"];
-    if (!validRoles.includes(newRole)) {
+    if (!isEnumValue(Role, newRole)) {
       throw new HttpError(400, "Papel inválido");
     }
 

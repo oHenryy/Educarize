@@ -8,7 +8,9 @@ export class CourseController {
   async list(req: Request, res: Response): Promise<void> {
     try {
       const { categoryId, difficulty, status, search, instructorId } = req.query;
-      const courses = await courseService.listCourses(
+      const page = Number(req.query.page) || 1;
+      const limit = Number(req.query.limit) || 20;
+      const result = await courseService.listCourses(
         {
           categoryId: categoryId as string,
           difficulty: difficulty as string,
@@ -16,9 +18,11 @@ export class CourseController {
           search: search as string,
           instructorId: instructorId as string,
         },
-        req.user!
+        req.user!,
+        page,
+        limit
       );
-      res.json(courses);
+      res.json(result);
     } catch (error) {
       sendError(res, error);
     }

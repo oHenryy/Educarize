@@ -1,7 +1,9 @@
 import { prisma } from "../config/database";
 import { logActivity } from "../utils/activityLogger";
 import { NotificationService } from "./notificationService";
+import { Difficulty, LearningPathStatus } from "@prisma/client";
 import { HttpError } from "../utils/httpError";
+import { isEnumValue } from "../utils/enums";
 import { AuthUser } from "../utils/courseAccess";
 
 export interface CreateLearningPathData {
@@ -150,13 +152,8 @@ export class LearningPathService {
       throw new HttpError(403, "Sem permissão para criar trilha de aprendizado");
     }
 
-    const validDifficulties = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
-    const finalDifficulty =
-      data.difficulty && validDifficulties.includes(data.difficulty) ? data.difficulty : null;
-
-    const validStatuses = ["DRAFT", "PUBLISHED", "ARCHIVED"];
-    const finalStatus =
-      data.status && validStatuses.includes(data.status) ? data.status : "DRAFT";
+    const finalDifficulty: Difficulty | null = isEnumValue(Difficulty, data.difficulty) ? data.difficulty : null;
+    const finalStatus: LearningPathStatus = isEnumValue(LearningPathStatus, data.status) ? data.status : "DRAFT";
 
     const learningPath = await prisma.learningPath.create({
       data: {
@@ -208,21 +205,10 @@ export class LearningPathService {
       throw new HttpError(403, "Sem permissão para editar esta trilha");
     }
 
-    let finalDifficulty: string | undefined = undefined;
-    if (data.difficulty) {
-      const validDifficulties = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
-      if (validDifficulties.includes(data.difficulty)) {
-        finalDifficulty = data.difficulty;
-      }
-    }
-
-    let finalStatus: string | undefined = undefined;
-    if (data.status) {
-      const validStatuses = ["DRAFT", "PUBLISHED", "ARCHIVED"];
-      if (validStatuses.includes(data.status)) {
-        finalStatus = data.status;
-      }
-    }
+    const finalDifficulty: Difficulty | undefined = isEnumValue(Difficulty, data.difficulty) ? data.difficulty : undefined;
+    const finalStatus: LearningPathStatus | undefined = isEnumValue(LearningPathStatus, data.status)
+      ? data.status
+      : undefined;
 
     const updated = await prisma.learningPath.update({
       where: { id },
@@ -498,115 +484,87 @@ export class LearningPathService {
     return enrollment;
   }
 
+  /**
+   * Calcula o progresso do usuário na trilha (somente leitura).
+   * Considera os cursos obrigatórios (ou todos, se nenhum for obrigatório) e usa contagens no banco.
+   */
+  private async computeProgress(learningPathId: string, userId: string) {
+    const pathCourses = await prisma.learningPathCourse.findMany({
+      where: { learningPathId },
+      select: { courseId: true, isRequired: true },
+    });
+    const counted = pathCourses.some((c) => c.isRequired) ? pathCourses.filter((c) => c.isRequired) : pathCourses;
+
+    const perCourse = await Promise.all(
+      counted.map(async ({ courseId }) => {
+        const [lessons, completed] = await Promise.all([
+          prisma.lesson.count({ where: { module: { courseId } } }),
+          prisma.userProgress.count({ where: { userId, completed: true, lesson: { module: { courseId } } } }),
+        ]);
+        return { lessons, completed };
+      })
+    );
+
+    const totalLessons = perCourse.reduce((sum, c) => sum + c.lessons, 0);
+    const completedLessons = perCourse.reduce((sum, c) => sum + c.completed, 0);
+
+    return {
+      progress: totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0,
+      totalCourses: counted.length,
+      completedCourses: perCourse.filter((c) => c.lessons > 0 && c.completed >= c.lessons).length,
+      totalLessons,
+      completedLessons,
+    };
+  }
+
   async getUserProgress(learningPathId: string, userId: string) {
     const enrollment = await prisma.learningPathEnrollment.findUnique({
-      where: {
-        userId_learningPathId: {
-          userId,
-          learningPathId,
-        },
-      },
-      include: {
-        learningPath: {
-          include: {
-            courses: {
-              include: {
-                course: {
-                  include: {
-                    modules: {
-                      include: {
-                        lessons: true,
-                      },
-                    },
-                  },
-                },
-              },
-              orderBy: { order: "asc" },
-            },
-          },
-        },
-      },
+      where: { userId_learningPathId: { userId, learningPathId } },
+      include: { learningPath: { select: { id: true, title: true } } },
     });
 
     if (!enrollment) {
       throw new HttpError(404, "Você não está matriculado nesta trilha");
     }
 
-    // O progresso considera apenas cursos obrigatórios (ou todos, se nenhum for marcado como obrigatório).
-    const allCourses = enrollment.learningPath.courses;
-    const requiredCourses = allCourses.some((c) => c.isRequired)
-      ? allCourses.filter((c) => c.isRequired)
-      : allCourses;
+    const stats = await this.computeProgress(learningPathId, userId);
+    return { enrollment: { ...enrollment, progress: stats.progress }, ...stats };
+  }
 
-    const totalCourses = requiredCourses.length;
-    let completedCourses = 0;
-    let totalLessons = 0;
-    let completedLessons = 0;
+  /**
+   * Chamado quando o progresso do usuário em um curso muda: atualiza as trilhas que contêm o curso
+   * e registra (com notificação) as que acabaram de ser concluídas.
+   */
+  async onCourseProgressChanged(userId: string, courseId: string): Promise<void> {
+    const enrollments = await prisma.learningPathEnrollment.findMany({
+      where: { userId, learningPath: { courses: { some: { courseId } } } },
+      include: { learningPath: { select: { title: true } } },
+    });
 
-    for (const pathCourse of requiredCourses) {
-      const courseLessons = pathCourse.course.modules.reduce(
-        (sum, mod) => sum + mod.lessons.length,
-        0
-      );
-      totalLessons += courseLessons;
+    for (const enrollment of enrollments) {
+      const { progress } = await this.computeProgress(enrollment.learningPathId, userId);
+      const justCompleted = progress === 100 && !enrollment.completedAt;
 
-      const courseCompleted = await prisma.userProgress.count({
-        where: {
-          userId,
-          lesson: {
-            module: {
-              courseId: pathCourse.courseId,
-            },
-          },
-          completed: true,
-        },
-      });
-
-      completedLessons += courseCompleted;
-
-      if (courseLessons > 0 && courseCompleted >= courseLessons) {
-        completedCourses++;
-      }
-    }
-
-    const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
-
-    const justCompleted = progress === 100 && !enrollment.completedAt;
-
-    if (progress !== enrollment.progress || justCompleted) {
       await prisma.learningPathEnrollment.update({
         where: { id: enrollment.id },
-        data: {
-          progress,
-          ...(justCompleted && { completedAt: new Date() }),
-        },
+        data: { progress, ...(justCompleted && { completedAt: new Date() }) },
       });
-    }
 
-    if (justCompleted) {
-      const notificationService = new NotificationService();
-      await notificationService
-        .createNotification(
-          userId,
-          "Parabéns! Trilha concluída!",
-          `Você completou 100% da trilha "${enrollment.learningPath.title}".`,
-          "SUCCESS"
-        )
-        .catch((err) => console.error("Erro ao criar notificação:", err));
+      if (justCompleted) {
+        await new NotificationService()
+          .createNotification(
+            userId,
+            "Parabéns! Trilha concluída!",
+            `Você completou 100% da trilha "${enrollment.learningPath.title}".`,
+            "SUCCESS"
+          )
+          .catch((err) => console.error("Erro ao criar notificação:", err));
+      }
     }
-
-    return {
-      enrollment,
-      progress,
-      totalCourses,
-      completedCourses,
-      totalLessons,
-      completedLessons,
-    };
   }
 
   async getUserLearningPaths(userId: string) {
-    return await prisma.learningPathEnrollment.findMany({
+    const enrollments = await prisma.learningPathEnrollment.findMany({
       where: { userId },
       include: {
         learningPath: {
@@ -640,6 +598,13 @@ export class LearningPathService {
       },
       orderBy: { enrolledAt: "desc" },
     });
+
+    return Promise.all(
+      enrollments.map(async (enrollment) => ({
+        ...enrollment,
+        progress: (await this.computeProgress(enrollment.learningPathId, userId)).progress,
+      }))
+    );
   }
 }
 

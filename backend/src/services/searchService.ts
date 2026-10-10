@@ -35,8 +35,8 @@ export class SearchService {
 
     if (filters.query) {
       where.OR = [
-        { title: { contains: filters.query } },
-        { description: { contains: filters.query } },
+        { title: { contains: filters.query, mode: "insensitive" } },
+        { description: { contains: filters.query, mode: "insensitive" } },
       ];
     }
 
@@ -137,8 +137,8 @@ export class SearchService {
   async searchLessons(query: string, courseId?: string) {
     const where: any = {
       OR: [
-        { title: { contains: query } },
-        { description: { contains: query } },
+        { title: { contains: query, mode: "insensitive" } },
+        { description: { contains: query, mode: "insensitive" } },
       ],
       module: {
         course: { status: "PUBLISHED" },
@@ -186,6 +186,7 @@ export class SearchService {
         userId,
         content: {
           contains: query,
+          mode: "insensitive",
         },
       },
       include: {
@@ -238,8 +239,8 @@ export class SearchService {
         where: {
           status: "PUBLISHED",
           OR: [
-            { title: { contains: query } },
-            { description: { contains: query } },
+            { title: { contains: query, mode: "insensitive" } },
+            { description: { contains: query, mode: "insensitive" } },
           ],
         },
         select: {
@@ -252,6 +253,7 @@ export class SearchService {
         where: {
           name: {
             contains: query,
+            mode: "insensitive",
           },
         },
         select: {

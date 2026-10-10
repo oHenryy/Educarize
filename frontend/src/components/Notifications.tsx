@@ -1,26 +1,23 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { useSocket, useSocketEvent } from "../context/useSocket";
 import type { Notification } from "../types";
 
+const DROPDOWN_LIMIT = 10;
+
 export default function Notifications() {
+  const socket = useSocket();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showDropdown, setShowDropdown] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchNotifications();
-    fetchUnreadCount();
-    const interval = setInterval(() => {
-      fetchUnreadCount();
-    }, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
-      const res = await api.get("/notifications?limit=10");
+      const res = await api.get<{ notifications: Notification[]; unreadCount: number }>(
+        `/notifications?limit=${DROPDOWN_LIMIT}`
+      );
       setNotifications(res.data.notifications || []);
       setUnreadCount(res.data.unreadCount || 0);
     } catch (err) {
@@ -28,22 +25,29 @@ export default function Notifications() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchUnreadCount = async () => {
-    try {
-      const res = await api.get("/notifications/unread-count");
-      setUnreadCount(res.data.unreadCount || 0);
-    } catch (err) {
-      console.error("Erro ao carregar contador de não lidas:", err);
-    }
-  };
+  // Carrega ao abrir e ressincroniza a cada (re)conexão do socket, cobrindo o que chegou enquanto estava offline.
+  useEffect(() => {
+    fetchNotifications();
+    if (!socket) return;
+    socket.on("connect", fetchNotifications);
+    return () => {
+      socket.off("connect", fetchNotifications);
+    };
+  }, [socket, fetchNotifications]);
+
+  // Notificações novas chegam em tempo real (sem consultas periódicas ao servidor).
+  useSocketEvent<Notification>("notification", (notification) => {
+    setNotifications((prev) => [notification, ...prev.filter((n) => n.id !== notification.id)].slice(0, DROPDOWN_LIMIT));
+    setUnreadCount((count) => count + 1);
+  });
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
       await api.put(`/notifications/${notificationId}/read`);
-      setNotifications(notifications.map(n => n.id === notificationId ? { ...n, read: true } : n));
-      setUnreadCount(Math.max(0, unreadCount - 1));
+      setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n)));
+      setUnreadCount((count) => Math.max(0, count - 1));
     } catch (err) {
       console.error("Erro ao marcar como lida:", err);
     }
@@ -52,7 +56,7 @@ export default function Notifications() {
   const handleMarkAllAsRead = async () => {
     try {
       await api.put("/notifications/read-all");
-      setNotifications(notifications.map(n => ({ ...n, read: true })));
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
     } catch (err) {
       console.error("Erro ao marcar todas como lidas:", err);

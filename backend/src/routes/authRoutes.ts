@@ -26,7 +26,7 @@ router.post("/resend-verification", authenticate, authLimiter, (req, res) =>
   authController.resendVerification(req, res)
 );
 
-router.get("/users", authenticate, (req, res) => authController.getUsers(req, res));
+router.get("/users", authenticate, validate({ query: s.usersQuery }), (req, res) => authController.getUsers(req, res));
 router.get("/me", authenticate, (req, res) => authController.getMe(req, res));
 router.post("/change-password", authenticate, validate({ body: s.changePasswordBody }), (req, res) =>
   authController.changePassword(req, res)

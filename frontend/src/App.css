@@ -3763,7 +3763,7 @@
   max-height: 300px;
   overflow-y: auto;
   z-index: 10;
-  display: none;
+  display: block;
 }
 
 .user-item {

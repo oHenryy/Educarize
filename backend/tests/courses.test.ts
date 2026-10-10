@@ -39,10 +39,10 @@ describe("cursos, aulas e visibilidade", () => {
 
   it("rascunhos não aparecem para alunos", async () => {
     const list = await api.get("/courses").set(auth(student));
-    expect(list.body.some((c: { id: string }) => c.id === course.id)).toBe(false);
+    expect(list.body.courses.some((c: { id: string }) => c.id === course.id)).toBe(false);
 
     const viaStatus = await api.get("/courses?status=DRAFT").set(auth(student));
-    expect(viaStatus.body.some((c: { id: string }) => c.id === course.id)).toBe(false);
+    expect(viaStatus.body.courses.some((c: { id: string }) => c.id === course.id)).toBe(false);
 
     const byId = await api.get(`/courses/${course.id}`).set(auth(student));
     expect(byId.status).toBe(404);
@@ -53,7 +53,7 @@ describe("cursos, aulas e visibilidade", () => {
 
   it("instrutor vê os próprios rascunhos", async () => {
     const res = await api.get(`/courses?instructorId=${instructor.user.id}`).set(auth(instructor));
-    expect(res.body.some((c: { id: string }) => c.id === course.id)).toBe(true);
+    expect(res.body.courses.some((c: { id: string }) => c.id === course.id)).toBe(true);
   });
 
   it("instrutor não pode suspender o próprio curso", async () => {

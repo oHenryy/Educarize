@@ -134,10 +134,10 @@ export default function AdminUsersPage() {
   const startTransfer = async (userId: string) => {
     try {
       // Admin recebe a lista completa de usuários; só instrutores/admins podem receber conteúdo.
-      const res = await api.get<TransferCandidate[]>("/auth/users");
-      setTransferCandidates(
-        res.data.filter((u) => u.id !== userId && (u.role === "INSTRUCTOR" || u.role === "ADMIN"))
-      );
+      const res = await api.get<TransferCandidate[]>("/auth/users", {
+        params: { roles: "INSTRUCTOR,ADMIN", limit: 100 },
+      });
+      setTransferCandidates(res.data.filter((u) => u.id !== userId));
       setTransferTarget("");
       setTransferringUser(userId);
       setEditingUser(null);

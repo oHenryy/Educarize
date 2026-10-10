@@ -5,13 +5,13 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     globalSetup: ["./tests/globalSetup.ts"],
-    // SQLite não lida bem com escritas concorrentes: os arquivos rodam em sequência.
+    // Os arquivos compartilham o mesmo schema de banco: rodam em sequência para não interferirem entre si.
     fileParallelism: false,
     testTimeout: 20000,
     hookTimeout: 60000,
     env: {
       NODE_ENV: "test",
-      DATABASE_URL: `file:${testPaths.database}`,
+      DATABASE_URL: testPaths.databaseUrl,
       JWT_SECRET: "test-secret",
       CERTIFICATES_DIR: testPaths.certificates,
       // O limitador é testado isoladamente; aqui não pode atrapalhar os demais testes.

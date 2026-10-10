@@ -3,65 +3,63 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id               String          @id @default(cuid())
-  name             String
-  email            String          @unique
-  passwordHash     String
-  /// Papel do usuário: 'ADMIN' | 'INSTRUCTOR' | 'STUDENT'
-  role             String          @default("STUDENT")
-  avatarUrl        String?
+  id                      String                   @id @default(cuid())
+  name                    String
+  email                   String                   @unique
+  passwordHash            String
+  role                    Role                     @default(STUDENT)
+  avatarUrl               String?
   /// Preenchido quando o usuário confirma o e-mail
-  emailVerifiedAt  DateTime?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  activityLogs     ActivityLog[]
-  certificates     Certificate[]
-  coursesCreated   Course[]        @relation("CourseInstructor")
-  reviews          CourseReview[]
-  enrollments      Enrollment[]
-  favorites        Favorite[]
-  comments         LessonComment[]
-  receivedMessages Message[]       @relation("MessageReceiver")
-  sentMessages     Message[]       @relation("MessageSender")
-  notes            Note[]
-  notifications    Notification[]
-  quizAttempts     QuizAttempt[]
-  progress         UserProgress[]
-  learningPathsCreated LearningPath[] @relation("LearningPathInstructor")
+  emailVerifiedAt         DateTime?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  activityLogs            ActivityLog[]
+  certificates            Certificate[]
+  coursesCreated          Course[]                 @relation("CourseInstructor")
+  reviews                 CourseReview[]
+  enrollments             Enrollment[]
+  favorites               Favorite[]
+  comments                LessonComment[]
+  receivedMessages        Message[]                @relation("MessageReceiver")
+  sentMessages            Message[]                @relation("MessageSender")
+  notes                   Note[]
+  notifications           Notification[]
+  quizAttempts            QuizAttempt[]
+  progress                UserProgress[]
+  learningPathsCreated    LearningPath[]           @relation("LearningPathInstructor")
   learningPathEnrollments LearningPathEnrollment[] @relation("LearningPathEnrollments")
-  refreshTokens    RefreshToken[]
-  authTokens       AuthToken[]
+  refreshTokens           RefreshToken[]
+  authTokens              AuthToken[]
 }
 
 /// Sessão de login: guarda apenas o hash do refresh token (rotacionado a cada uso).
 model RefreshToken {
-  id         String    @id @default(cuid())
-  userId     String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 /// Tokens de uso único enviados por e-mail (redefinição de senha e verificação de e-mail).
 model AuthToken {
-  id         String    @id @default(cuid())
-  userId     String
-  /// 'PASSWORD_RESET' | 'EMAIL_VERIFICATION'
-  type       String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  usedAt     DateTime?
-  createdAt  DateTime  @default(now())
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String        @id @default(cuid())
+  userId    String
+  type      AuthTokenType
+  tokenHash String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type])
 }
@@ -76,29 +74,31 @@ model CourseCategory {
 }
 
 model Course {
-  id            String          @id @default(cuid())
+  id            String               @id @default(cuid())
   title         String
   description   String?
   coverImageUrl String?
   /// Carga horária em horas
-  durationHours Int             @default(0)
-  /// Dificuldade: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'
-  difficulty    String          @default("BEGINNER")
-  /// Status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'SUSPENDED'
-  status        String          @default("DRAFT")
+  durationHours Int                  @default(0)
+  difficulty    Difficulty           @default(BEGINNER)
+  status        CourseStatus         @default(DRAFT)
   instructorId  String
   categoryId    String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
   certificates  Certificate[]
-  category      CourseCategory? @relation(fields: [categoryId], references: [id])
-  instructor    User            @relation("CourseInstructor", fields: [instructorId], references: [id])
+  category      CourseCategory?      @relation(fields: [categoryId], references: [id])
+  instructor    User                 @relation("CourseInstructor", fields: [instructorId], references: [id])
   reviews       CourseReview[]
   tags          CourseTag[]
   enrollments   Enrollment[]
   favorites     Favorite[]
   modules       Module[]
   learningPaths LearningPathCourse[]
+
+  @@index([instructorId])
+  @@index([categoryId])
+  @@index([status, createdAt])
 }
 
 model Module {
@@ -112,6 +112,8 @@ model Module {
   lessons     Lesson[]
   course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   quiz        Quiz?
+
+  @@index([courseId])
 }
 
 model Lesson {
@@ -131,6 +133,8 @@ model Lesson {
   comments        LessonComment[]
   notes           Note[]
   progress        UserProgress[]
+
+  @@index([moduleId])
 }
 
 model LessonAttachment {
@@ -171,6 +175,7 @@ model Enrollment {
   @@unique([userId, courseId])
   @@index([userId])
   @@index([courseId])
+  @@index([courseId, enrolledAt])
 }
 
 model UserProgress {
@@ -188,6 +193,7 @@ model UserProgress {
   @@unique([userId, lessonId])
   @@index([userId])
   @@index([lessonId])
+  @@index([userId, completed])
 }
 
 model Quiz {
@@ -205,29 +211,28 @@ model Quiz {
 }
 
 model QuizQuestion {
-  id            String   @id @default(cuid())
+  id            String       @id @default(cuid())
   question      String
-  /// Tipo: 'MULTIPLE_CHOICE'
-  type          String   @default("MULTIPLE_CHOICE")
-  /// Opções de resposta (JSON array)
-  /// JSON: ["Opção A", "Opção B", ...]
-  options       String
+  type          QuestionType @default(MULTIPLE_CHOICE)
+  /// Lista de opções: ["Opção A", "Opção B", ...]
+  options       Json
   /// Índice da resposta correta (0-based)
   correctAnswer Int
-  order         Int      @default(0)
+  order         Int          @default(0)
   quizId        String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  quiz          Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId])
 }
 
 model QuizAttempt {
   id          String   @id @default(cuid())
   userId      String
   quizId      String
-  /// Respostas do usuário (JSON object: { questionId: answerIndex })
-  /// JSON: { "questionId1": 0, "questionId2": 2 }
-  answers     String
+  /// Respostas: { "questionId": índice }
+  answers     Json
   /// Nota obtida (0-100)
   score       Int
   passed      Boolean
@@ -255,6 +260,7 @@ model LessonComment {
 
   @@index([lessonId])
   @@index([userId])
+  @@index([parentId])
 }
 
 model Certificate {
@@ -367,19 +373,20 @@ model CourseReview {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   title     String
   message   String
-  /// 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR'
-  type      String
-  read      Boolean  @default(false)
+  type      NotificationType
+  read      Boolean          @default(false)
   userId    String
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([read])
   @@index([createdAt])
+  @@index([userId, read])
+  @@index([userId, createdAt])
 }
 
 model Message {
@@ -396,22 +403,24 @@ model Message {
   @@index([receiverId])
   @@index([read])
   @@index([createdAt])
+  @@index([receiverId, read])
+  @@index([senderId, receiverId, createdAt])
 }
 
 model LearningPath {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  coverImageUrl String?
-  difficulty  String?  /// 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'
-  estimatedHours Int?  /// Horas estimadas para completar a trilha
-  instructorId String
-  status      String   @default("DRAFT") /// 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String             @id @default(cuid())
+  title          String
+  description    String?
+  coverImageUrl  String?
+  difficulty     Difficulty?
+  estimatedHours Int? /// Horas estimadas para completar a trilha
+  instructorId   String
+  status         LearningPathStatus @default(DRAFT)
 
-  instructor  User     @relation("LearningPathInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  instructor  User                     @relation("LearningPathInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
   courses     LearningPathCourse[]
   enrollments LearningPathEnrollment[]
 
@@ -420,16 +429,16 @@ model LearningPath {
 }
 
 model LearningPathCourse {
-  id            String   @id @default(cuid())
+  id             String  @id @default(cuid())
   learningPathId String
-  courseId      String
-  order         Int      @default(0) /// Ordem na trilha
-  isRequired    Boolean  @default(true) /// Se o curso é obrigatório na trilha
-  
-  createdAt     DateTime @default(now())
+  courseId       String
+  order          Int     @default(0) /// Ordem na trilha
+  isRequired     Boolean @default(true) /// Se o curso é obrigatório na trilha
 
-  learningPath  LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
-  course        Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  learningPath LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
+  course       Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([learningPathId, courseId])
   @@index([learningPathId])
@@ -437,17 +446,58 @@ model LearningPathCourse {
 }
 
 model LearningPathEnrollment {
-  id            String   @id @default(cuid())
-  userId        String
+  id             String    @id @default(cuid())
+  userId         String
   learningPathId String
-  enrolledAt   DateTime @default(now())
-  completedAt   DateTime?
-  progress      Int      @default(0) /// Percentual de conclusão (0-100)
+  enrolledAt     DateTime  @default(now())
+  completedAt    DateTime?
+  progress       Int       @default(0) /// Percentual de conclusão (0-100)
 
-  user          User     @relation("LearningPathEnrollments", fields: [userId], references: [id], onDelete: Cascade)
-  learningPath  LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
+  user         User         @relation("LearningPathEnrollments", fields: [userId], references: [id], onDelete: Cascade)
+  learningPath LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
 
   @@unique([userId, learningPathId])
   @@index([userId])
   @@index([learningPathId])
+}
+
+enum Role {
+  ADMIN
+  INSTRUCTOR
+  STUDENT
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  SUSPENDED
+}
+
+enum LearningPathStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+}
+
+enum AuthTokenType {
+  PASSWORD_RESET
+  EMAIL_VERIFICATION
 }

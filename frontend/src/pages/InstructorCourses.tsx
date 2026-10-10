@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../context/useAuth";
-import type { Course } from "../types";
+import type { Course, CoursesPage } from "../types";
+import { Pagination } from "../components/Pagination";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 
@@ -10,6 +11,8 @@ export default function InstructorCoursesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [courses, setCourses] = useState<Course[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,10 +29,11 @@ export default function InstructorCoursesPage() {
     async function fetchCourses() {
       try {
         // Admin vê todos os cursos; instrutor vê apenas os seus (inclusive rascunhos).
-        const { data } = await api.get<Course[]>("/courses", {
-          params: user?.role === "ADMIN" ? {} : { instructorId: user?.id },
+        const { data } = await api.get<CoursesPage>("/courses", {
+          params: { page, limit: 12, ...(user?.role === "ADMIN" ? {} : { instructorId: user?.id }) },
         });
-        setCourses(data);
+        setCourses(data.courses);
+        setTotalPages(data.pagination.totalPages);
       } catch (err) {
         setError(getErrorMessage(err, "Erro ao carregar cursos"));
       } finally {
@@ -37,7 +41,7 @@ export default function InstructorCoursesPage() {
       }
     }
     fetchCourses();
-  }, [user, navigate]);
+  }, [user, navigate, page]);
 
   if (loading) return <div className="loading">Carregando cursos...</div>;
   if (error) return <p className="error">{error}</p>;
@@ -109,6 +113,8 @@ export default function InstructorCoursesPage() {
           ))}
         </div>
       )}
+
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
     </div>
   );
 }

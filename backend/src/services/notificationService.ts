@@ -1,14 +1,12 @@
+import type { NotificationType } from "@prisma/client";
 import { prisma } from "../config/database";
+import { emitToUser } from "../socket/realtime";
 import { HttpError } from "../utils/httpError";
 
 export class NotificationService {
-  async createNotification(userId: string, title: string, message: string, type: string = "INFO") {
-    const validTypes = ["INFO", "SUCCESS", "WARNING", "ERROR"];
-    if (!validTypes.includes(type)) {
-      type = "INFO";
-    }
+  async createNotification(userId: string, title: string, message: string, type: NotificationType = "INFO") {
 
-    return await prisma.notification.create({
+    const notification = await prisma.notification.create({
       data: {
         userId,
         title,
@@ -16,6 +14,11 @@ export class NotificationService {
         type,
       },
     });
+
+    // Entrega imediata para quem estiver conectado (o frontend não precisa mais consultar periodicamente).
+    emitToUser(userId, "notification", notification);
+
+    return notification;
   }
 
   async getMyNotifications(userId: string, page: number = 1, limit: number = 50) {

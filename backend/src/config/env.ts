@@ -29,7 +29,6 @@ export const config = {
   isProduction,
   port: process.env.PORT || 4000,
   jwtSecret: resolveJwtSecret(),
-  databaseUrl: process.env.DATABASE_URL || "file:./dev.db",
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
   certificatesDir: process.env.CERTIFICATES_DIR || "certificates",
   authRateLimitMax: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,

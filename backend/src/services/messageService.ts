@@ -1,4 +1,5 @@
 import { prisma } from "../config/database";
+import { emitToUser } from "../socket/realtime";
 import { NotificationService } from "./notificationService";
 import { HttpError } from "../utils/httpError";
 
@@ -39,6 +40,9 @@ export class MessageService {
         },
       },
     });
+
+    // Entrega em tempo real ao destinatário, venha a mensagem pela API REST ou pelo socket.
+    emitToUser(receiverId, "new_message", message);
 
     const notificationService = new NotificationService();
     await notificationService
@@ -115,62 +119,73 @@ export class MessageService {
     };
   }
 
+  /**
+   * Lista as conversas do usuário com a última mensagem e o número de não lidas.
+   * Usa agregações no banco em vez de carregar todo o histórico de mensagens.
+   */
   async getConversations(userId: string) {
-    const messages = await prisma.message.findMany({
-      where: {
-        OR: [{ senderId: userId }, { receiverId: userId }],
-      },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            name: true,
-            avatarUrl: true,
-          },
-        },
-        receiver: {
-          select: {
-            id: true,
-            name: true,
-            avatarUrl: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
+    const userSelect = { select: { id: true, name: true, avatarUrl: true } } as const;
+
+    // Data da última mensagem por par (remetente, destinatário) envolvendo o usuário.
+    const pairs = await prisma.message.groupBy({
+      by: ["senderId", "receiverId"],
+      where: { OR: [{ senderId: userId }, { receiverId: userId }] },
+      _max: { createdAt: true },
     });
 
-    const conversationMap = new Map<string, any>();
-
-    messages.forEach((message) => {
-      const otherUserId =
-        message.senderId === userId ? message.receiverId : message.senderId;
-      const otherUser =
-        message.senderId === userId ? message.receiver : message.sender;
-
-      if (!conversationMap.has(otherUserId)) {
-        conversationMap.set(otherUserId, {
-          userId: otherUserId,
-          user: otherUser,
-          lastMessage: message,
-          unreadCount: 0,
-        });
+    // Junta as duas direções de cada conversa e fica com a mais recente.
+    const lastByPartner = new Map<string, { senderId: string; receiverId: string; createdAt: Date }>();
+    for (const pair of pairs) {
+      const partnerId = pair.senderId === userId ? pair.receiverId : pair.senderId;
+      const createdAt = pair._max.createdAt!;
+      const current = lastByPartner.get(partnerId);
+      if (!current || createdAt > current.createdAt) {
+        lastByPartner.set(partnerId, { senderId: pair.senderId, receiverId: pair.receiverId, createdAt });
       }
+    }
 
-      const conversation = conversationMap.get(otherUserId);
-      if (
-        !message.read &&
-        message.receiverId === userId &&
-        message.senderId === otherUserId
-      ) {
-        conversation.unreadCount++;
-      }
-    });
+    if (lastByPartner.size === 0) return [];
 
-    return Array.from(conversationMap.values()).sort(
-      (a, b) =>
-        new Date(b.lastMessage.createdAt).getTime() -
-        new Date(a.lastMessage.createdAt).getTime()
-    );
+    const [lastMessages, unread] = await Promise.all([
+      prisma.message.findMany({
+        where: {
+          OR: [...lastByPartner.values()].map((m) => ({
+            senderId: m.senderId,
+            receiverId: m.receiverId,
+            createdAt: m.createdAt,
+          })),
+        },
+        include: { sender: userSelect, receiver: userSelect },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      }),
+      prisma.message.groupBy({
+        by: ["senderId"],
+        where: { receiverId: userId, read: false },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const unreadBySender = new Map(unread.map((u) => [u.senderId, u._count._all]));
+    const conversations = new Map<string, {
+      userId: string;
+      user: { id: string; name: string; avatarUrl: string | null };
+      lastMessage: (typeof lastMessages)[number];
+      unreadCount: number;
+    }>();
+
+    // Já ordenado da mais recente para a mais antiga: a primeira de cada parceiro é a última mensagem.
+    for (const message of lastMessages) {
+      const partnerId = message.senderId === userId ? message.receiverId : message.senderId;
+      if (conversations.has(partnerId)) continue;
+      conversations.set(partnerId, {
+        userId: partnerId,
+        user: message.senderId === userId ? message.receiver : message.sender,
+        lastMessage: message,
+        unreadCount: unreadBySender.get(partnerId) ?? 0,
+      });
+    }
+
+    return [...conversations.values()];
   }
 
   async markAsRead(messageId: string, userId: string) {

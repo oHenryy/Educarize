@@ -1,6 +1,7 @@
 import { prisma } from "../config/database";
 import { CertificateService } from "./certificateService";
 import { NotificationService } from "./notificationService";
+import { LearningPathService } from "./learningPathService";
 import { HttpError } from "../utils/httpError";
 import { getCourseIdByLesson, isEnrolled } from "../utils/courseAccess";
 
@@ -97,6 +98,8 @@ export class ProgressService {
             "SUCCESS"
           ).catch(err => console.error("Erro ao criar notificação de certificado:", err));
         }
+
+        await new LearningPathService().onCourseProgressChanged(userId, lesson.module.courseId);
       }
     } catch (error) {
       console.error("Erro ao verificar certificado:", error);
@@ -118,7 +121,7 @@ export class ProgressService {
     });
 
     if (existing) {
-      return await prisma.userProgress.update({
+      const updated = await prisma.userProgress.update({
         where: {
           userId_lessonId: {
             userId,
@@ -130,6 +133,12 @@ export class ProgressService {
           completedAt: null,
         },
       });
+
+      await new LearningPathService()
+        .onCourseProgressChanged(userId, await getCourseIdByLesson(lessonId))
+        .catch((err) => console.error("Erro ao atualizar progresso das trilhas:", err));
+
+      return updated;
     }
 
     return null;

@@ -3,6 +3,8 @@ import jwt from "jsonwebtoken";
 import { config } from "../config/env";
 import { prisma } from "../config/database";
 import { ACCESS_COOKIE } from "../utils/authCookies";
+import { getRedis } from "../config/redis";
+import type Redis from "ioredis";
 
 type JwtPayload = {
   userId: string;
@@ -103,29 +105,92 @@ export function authorize(allowedRoles: JwtPayload["role"][]) {
   };
 }
 
-/** Limitador simples em memória (por IP + rota) para endpoints sensíveis como login. */
-export function rateLimit(maxAttempts: number, windowMs: number) {
-  const hits = new Map<string, { count: number; resetAt: number }>();
+// ---------- rate limit ----------
 
-  return (req: Request, res: Response, next: NextFunction): void => {
+export type RateLimitHit = { count: number; resetAt: number };
+
+/** Onde os contadores ficam: memória (uma instância) ou Redis (compartilhado entre instâncias). */
+export interface RateLimitStore {
+  hit(key: string, windowMs: number): Promise<RateLimitHit>;
+}
+
+export class MemoryRateLimitStore implements RateLimitStore {
+  private hits = new Map<string, RateLimitHit>();
+  private lastSweep = Date.now();
+
+  async hit(key: string, windowMs: number): Promise<RateLimitHit> {
     const now = Date.now();
-    const key = `${req.ip}:${req.baseUrl}${req.path}`;
-    const entry = hits.get(key);
+    this.sweep(now, windowMs);
 
+    const entry = this.hits.get(key);
     if (!entry || entry.resetAt <= now) {
-      hits.set(key, { count: 1, resetAt: now + windowMs });
+      const fresh = { count: 1, resetAt: now + windowMs };
+      this.hits.set(key, fresh);
+      return fresh;
+    }
+    entry.count++;
+    return entry;
+  }
+
+  /** Remove contadores expirados de tempos em tempos, para o mapa não crescer indefinidamente. */
+  private sweep(now: number, windowMs: number) {
+    if (now - this.lastSweep < windowMs) return;
+    this.lastSweep = now;
+    for (const [key, entry] of this.hits) {
+      if (entry.resetAt <= now) this.hits.delete(key);
+    }
+  }
+}
+
+/** Incrementa e define a expiração atomicamente (correto mesmo com várias instâncias ao mesmo tempo). */
+const HIT_SCRIPT = `
+local count = redis.call("INCR", KEYS[1])
+if count == 1 then redis.call("PEXPIRE", KEYS[1], ARGV[1]) end
+return { count, redis.call("PTTL", KEYS[1]) }
+`;
+
+export class RedisRateLimitStore implements RateLimitStore {
+  constructor(private redis: Redis, private prefix = "ratelimit:") {}
+
+  async hit(key: string, windowMs: number): Promise<RateLimitHit> {
+    const [count, ttl] = (await this.redis.eval(HIT_SCRIPT, 1, this.prefix + key, windowMs)) as [number, number];
+    return { count, resetAt: Date.now() + Math.max(ttl, 0) };
+  }
+}
+
+/** Limita tentativas por IP + rota (login, cadastro, recuperação de senha). */
+export function rateLimit(maxAttempts: number, windowMs: number, store?: RateLimitStore) {
+  const resolveStore = (() => {
+    let resolved: RateLimitStore | null = store ?? null;
+    return () => {
+      if (!resolved) {
+        const redis = getRedis();
+        resolved = redis ? new RedisRateLimitStore(redis) : new MemoryRateLimitStore();
+      }
+      return resolved;
+    };
+  })();
+
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const key = `${req.ip}:${req.baseUrl}${req.path}`;
+
+    let hit: RateLimitHit;
+    try {
+      hit = await resolveStore().hit(key, windowMs);
+    } catch (error) {
+      // Falha do Redis não derruba o login: a requisição segue, e o erro fica registrado.
+      console.error("Rate limit indisponível:", error);
       next();
       return;
     }
 
-    if (entry.count >= maxAttempts) {
-      const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+    if (hit.count > maxAttempts) {
+      const retryAfter = Math.max(1, Math.ceil((hit.resetAt - Date.now()) / 1000));
       res.setHeader("Retry-After", String(retryAfter));
       res.status(429).json({ error: "Muitas tentativas. Tente novamente em alguns minutos." });
       return;
     }
 
-    entry.count++;
     next();
   };
 }

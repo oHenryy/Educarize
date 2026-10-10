@@ -25,10 +25,8 @@ export class InstructorService {
       prisma.enrollment.count({
         where: { course: { instructorId } },
       }),
-      prisma.enrollment.findMany({
-        where: { course: { instructorId } },
-        select: { userId: true },
-        distinct: ["userId"],
+      prisma.user.count({
+        where: { enrollments: { some: { course: { instructorId } } } },
       }),
       prisma.lesson.count({
         where: { module: { course: { instructorId } } },
@@ -116,7 +114,7 @@ export class InstructorService {
         courses: totalCourses,
         publishedCourses,
         enrollments: totalEnrollments,
-        students: totalStudents.length,
+        students: totalStudents,
         lessons: totalLessons,
         quizzes: totalQuizzes,
         comments: totalComments,
@@ -155,127 +153,112 @@ export class InstructorService {
   }
 
   private async getEnrollmentsOverTime(instructorId: string) {
+    // Datas no fuso do servidor, para as chaves dos dias e das matrículas baterem.
+    const dayKey = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 29);
+
+    // Só as matrículas da janela de 30 dias são lidas.
     const enrollments = await prisma.enrollment.findMany({
-      where: { course: { instructorId } },
+      where: { course: { instructorId }, enrolledAt: { gte: start } },
       select: { enrolledAt: true },
-      orderBy: { enrolledAt: "asc" },
     });
 
-    const last30Days = Array.from({ length: 30 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (29 - i));
-      date.setHours(0, 0, 0, 0);
-      return date.toISOString().split("T")[0];
+    const counts = new Map<string, number>();
+    for (const { enrolledAt } of enrollments) {
+      const key = dayKey(enrolledAt);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    return Array.from({ length: 30 }, (_, i) => {
+      const day = new Date(start);
+      day.setDate(start.getDate() + i);
+      const key = dayKey(day);
+      return { date: key, count: counts.get(key) ?? 0 };
     });
-
-    const enrollmentsByDate = enrollments.reduce((acc, enrollment) => {
-      const date = new Date(enrollment.enrolledAt).toISOString().split("T")[0];
-      acc[date] = (acc[date] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    return last30Days.map((date) => ({
-      date,
-      count: enrollmentsByDate[date] || 0,
-    }));
   }
 
   private async getCompletionRates(instructorId: string) {
     const courses = await prisma.course.findMany({
       where: { instructorId },
-      include: {
-        modules: {
-          include: {
-            lessons: true,
-          },
-        },
-        enrollments: {
-          include: {
-            user: {
-              include: {
-                progress: {
-                  where: { completed: true },
-                },
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        title: true,
+        _count: { select: { enrollments: true } },
+        modules: { select: { _count: { select: { lessons: true } } } },
       },
     });
 
-    return courses.map((course) => {
-      const totalLessons = course.modules.reduce((sum, mod) => sum + mod.lessons.length, 0);
-      const enrollments = course.enrollments.length;
-      
-      if (enrollments === 0) {
+    return Promise.all(
+      courses.map(async (course) => {
+        const totalLessons = course.modules.reduce((sum, mod) => sum + mod._count.lessons, 0);
+        const totalStudents = course._count.enrollments;
+
+        // Curso sem aulas (ou sem alunos) não tem conclusões.
+        let completedStudents = 0;
+        if (totalLessons > 0 && totalStudents > 0) {
+          const perStudent = await prisma.userProgress.groupBy({
+            by: ["userId"],
+            where: {
+              completed: true,
+              lesson: { module: { courseId: course.id } },
+              user: { enrollments: { some: { courseId: course.id } } },
+            },
+            _count: { _all: true },
+          });
+          completedStudents = perStudent.filter((s) => s._count._all >= totalLessons).length;
+        }
+
         return {
           courseId: course.id,
           courseTitle: course.title,
-          completionRate: 0,
-          totalStudents: 0,
-          completedStudents: 0,
+          completionRate: totalStudents > 0 ? Math.round((completedStudents / totalStudents) * 100) : 0,
+          totalStudents,
+          completedStudents,
         };
-      }
-
-      const courseLessonIds = new Set(course.modules.flatMap((mod) => mod.lessons.map((l) => l.id)));
-
-      // Curso sem aulas não tem como ser concluído.
-      const completedStudents =
-        totalLessons === 0
-          ? 0
-          : course.enrollments.filter((enrollment) => {
-              const completedLessons = enrollment.user.progress.filter((p) =>
-                courseLessonIds.has(p.lessonId)
-              ).length;
-              return completedLessons >= totalLessons;
-            }).length;
-
-      return {
-        courseId: course.id,
-        courseTitle: course.title,
-        completionRate: Math.round((completedStudents / enrollments) * 100),
-        totalStudents: enrollments,
-        completedStudents,
-      };
-    });
+      })
+    );
   }
 
   private async getQuizPerformance(instructorId: string) {
-    const quizzes = await prisma.quiz.findMany({
-      where: { module: { course: { instructorId } } },
-      include: {
-        attempts: true,
-        module: {
-          select: {
-            course: {
-              select: {
-                id: true,
-                title: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    const ofInstructor = { quiz: { module: { course: { instructorId } } } };
+
+    const [quizzes, totals, passed] = await Promise.all([
+      prisma.quiz.findMany({
+        where: { module: { course: { instructorId } } },
+        select: { id: true, title: true, module: { select: { course: { select: { title: true } } } } },
+      }),
+      prisma.quizAttempt.groupBy({
+        by: ["quizId"],
+        where: ofInstructor,
+        _count: { _all: true },
+        _avg: { score: true },
+      }),
+      prisma.quizAttempt.groupBy({
+        by: ["quizId"],
+        where: { ...ofInstructor, passed: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const totalsByQuiz = new Map(totals.map((t) => [t.quizId, t]));
+    const passedByQuiz = new Map(passed.map((p) => [p.quizId, p._count._all]));
 
     return quizzes.map((quiz) => {
-      const attempts = quiz.attempts;
-      const passed = attempts.filter((a) => a.passed).length;
-      const total = attempts.length;
-      const averageScore =
-        attempts.length > 0
-          ? Math.round(attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length)
-          : 0;
-
+      const total = totalsByQuiz.get(quiz.id)?._count._all ?? 0;
+      const passedAttempts = passedByQuiz.get(quiz.id) ?? 0;
       return {
         quizId: quiz.id,
         quizTitle: quiz.title,
         courseTitle: quiz.module.course.title,
         totalAttempts: total,
-        passedAttempts: passed,
-        failedAttempts: total - passed,
-        averageScore,
-        passRate: total > 0 ? Math.round((passed / total) * 100) : 0,
+        passedAttempts,
+        failedAttempts: total - passedAttempts,
+        averageScore: Math.round(totalsByQuiz.get(quiz.id)?._avg.score ?? 0),
+        passRate: total > 0 ? Math.round((passedAttempts / total) * 100) : 0,
       };
     });
   }
@@ -283,90 +266,96 @@ export class InstructorService {
   private async getTopStudents(instructorId: string) {
     const ofInstructor = { module: { course: { instructorId } } };
 
-    // Dados por aluno, já restritos aos cursos deste instrutor (sem contagem duplicada por matrícula).
-    const students = await prisma.user.findMany({
-      where: { enrollments: { some: { course: { instructorId } } } },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        _count: {
-          select: {
-            enrollments: { where: { course: { instructorId } } },
-            progress: { where: { completed: true, lesson: ofInstructor } },
-            certificates: { where: { course: { instructorId } } },
-          },
-        },
-        quizAttempts: {
-          where: { quiz: ofInstructor },
-          select: { quizId: true, score: true, passed: true },
-        },
-      },
+    // Os 10 alunos com mais aulas concluídas nos cursos deste instrutor, calculado no banco.
+    const top = await prisma.userProgress.groupBy({
+      by: ["userId"],
+      where: { completed: true, lesson: ofInstructor },
+      _count: { userId: true },
+      orderBy: { _count: { userId: "desc" } },
+      take: 10,
     });
 
-    return students
-      .map((student) => {
-        const attempts = student.quizAttempts;
-        const passedQuizIds = new Set(attempts.filter((a) => a.passed).map((a) => a.quizId));
-        const averageQuizScore =
-          attempts.length > 0
-            ? Math.round(attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length)
-            : 0;
+    if (top.length === 0) return [];
+    const userIds = top.map((t) => t.userId);
 
-        return {
-          userId: student.id,
-          userName: student.name,
-          userEmail: student.email,
-          coursesEnrolled: student._count.enrollments,
-          lessonsCompleted: student._count.progress,
-          certificatesEarned: student._count.certificates,
-          quizzesPassed: passedQuizIds.size,
-          averageQuizScore,
-        };
-      })
-      .sort((a, b) => b.lessonsCompleted - a.lessonsCompleted)
-      .slice(0, 10);
+    const [users, attempts, passedQuizzes] = await Promise.all([
+      prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          _count: {
+            select: {
+              enrollments: { where: { course: { instructorId } } },
+              certificates: { where: { course: { instructorId } } },
+            },
+          },
+        },
+      }),
+      prisma.quizAttempt.groupBy({
+        by: ["userId"],
+        where: { userId: { in: userIds }, quiz: ofInstructor },
+        _avg: { score: true },
+      }),
+      prisma.quizAttempt.groupBy({
+        by: ["userId", "quizId"],
+        where: { userId: { in: userIds }, passed: true, quiz: ofInstructor },
+      }),
+    ]);
+
+    const usersById = new Map(users.map((u) => [u.id, u]));
+    const avgByUser = new Map(attempts.map((a) => [a.userId, a._avg.score ?? 0]));
+    const passedByUser = new Map<string, number>();
+    for (const p of passedQuizzes) passedByUser.set(p.userId, (passedByUser.get(p.userId) ?? 0) + 1);
+
+    return top.flatMap((t) => {
+      const user = usersById.get(t.userId);
+      if (!user) return [];
+      return [
+        {
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          coursesEnrolled: user._count.enrollments,
+          lessonsCompleted: t._count.userId,
+          certificatesEarned: user._count.certificates,
+          quizzesPassed: passedByUser.get(user.id) ?? 0,
+          averageQuizScore: Math.round(avgByUser.get(user.id) ?? 0),
+        },
+      ];
+    });
   }
 
   private async getAverageRatings(instructorId: string) {
-    const courses = await prisma.course.findMany({
-      where: { instructorId },
-      include: {
-        reviews: true,
-      },
-    });
+    const [courses, perCourse, overall] = await Promise.all([
+      prisma.course.findMany({ where: { instructorId }, select: { id: true, title: true } }),
+      prisma.courseReview.groupBy({
+        by: ["courseId"],
+        where: { course: { instructorId } },
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+      // Média geral ponderada por avaliação (cursos sem avaliação não puxam a média para baixo).
+      prisma.courseReview.aggregate({
+        where: { course: { instructorId } },
+        _avg: { rating: true },
+      }),
+    ]);
 
-    const courseRatings = courses.map((course) => {
-      if (course.reviews.length === 0) {
+    const byCourse = new Map(perCourse.map((c) => [c.courseId, c]));
+
+    return {
+      overallAverage: Math.round((overall._avg.rating ?? 0) * 10) / 10,
+      byCourse: courses.map((course) => {
+        const stats = byCourse.get(course.id);
         return {
           courseId: course.id,
           courseTitle: course.title,
-          averageRating: 0,
-          totalReviews: 0,
+          averageRating: Math.round((stats?._avg.rating ?? 0) * 10) / 10,
+          totalReviews: stats?._count._all ?? 0,
         };
-      }
-
-      const averageRating =
-        course.reviews.reduce((sum, review) => sum + review.rating, 0) / course.reviews.length;
-
-      return {
-        courseId: course.id,
-        courseTitle: course.title,
-        averageRating: Math.round(averageRating * 10) / 10,
-        totalReviews: course.reviews.length,
-      };
-    });
-
-    // Média geral ponderada por avaliação, ignorando cursos sem nenhuma avaliação.
-    const allReviews = courses.flatMap((course) => course.reviews);
-    const overallAverage =
-      allReviews.length > 0
-        ? allReviews.reduce((sum, review) => sum + review.rating, 0) / allReviews.length
-        : 0;
-
-    return {
-      overallAverage: Math.round(overallAverage * 10) / 10,
-      byCourse: courseRatings,
+      }),
     };
   }
 }

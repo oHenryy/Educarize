@@ -5,6 +5,7 @@ import { ACCESS_COOKIE } from "../utils/authCookies";
 import { MessageService } from "../services/messageService";
 import { sendMessageBody } from "../validation/schemas";
 import { toHttpResponse } from "../utils/httpError";
+import { setRealtimeServer } from "./realtime";
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -13,6 +14,7 @@ interface AuthenticatedSocket extends Socket {
 
 export function setupSocketIO(io: SocketServer) {
   const messageService = new MessageService();
+  setRealtimeServer(io);
 
   // O navegador envia o cookie httpOnly da sessão no handshake (withCredentials no cliente).
   io.use(async (socket: AuthenticatedSocket, next) => {
@@ -46,8 +48,8 @@ export function setupSocketIO(io: SocketServer) {
 
         const message = await messageService.sendMessage(userId, receiverId, content);
 
+        // "new_message" para o destinatário é emitido pelo próprio MessageService.
         socket.emit("message_sent", message);
-        io.to(`user:${receiverId}`).emit("new_message", message);
 
         const unreadCount = await messageService.getUnreadCount(receiverId);
         io.to(`user:${receiverId}`).emit("unread_count_update", { count: unreadCount });

@@ -1,5 +1,9 @@
 import { prisma } from "../config/database";
 import { NotificationService } from "./notificationService";
+import type { Prisma } from "@prisma/client";
+
+/** Opções de questão gravadas como JSON (array de textos). */
+const toOptions = (value: Prisma.JsonValue): string[] => (Array.isArray(value) ? value.map(String) : []);
 import { HttpError } from "../utils/httpError";
 import {
   AuthUser,
@@ -41,7 +45,7 @@ export class QuizService {
       ...quizData,
       questions: quiz.questions.map(({ correctAnswer, ...q }) => ({
         ...q,
-        options: JSON.parse(q.options),
+        options: toOptions(q.options),
         ...(canSeeAnswers && { correctAnswer }),
       })),
     };
@@ -100,7 +104,7 @@ export class QuizService {
       ...quiz,
       questions: quiz.questions.map((q) => ({
         ...q,
-        options: JSON.parse(q.options),
+        options: toOptions(q.options),
       })),
     };
   }
@@ -154,7 +158,7 @@ export class QuizService {
       ...updated,
       questions: updated.questions.map((q) => ({
         ...q,
-        options: JSON.parse(q.options),
+        options: toOptions(q.options),
       })),
     };
   }
@@ -235,7 +239,7 @@ export class QuizService {
     const question = await prisma.quizQuestion.create({
       data: {
         question: data.question,
-        options: JSON.stringify(data.options),
+        options: data.options,
         correctAnswer: data.correctAnswer,
         order: data.order ?? 0,
         quizId,
@@ -244,7 +248,7 @@ export class QuizService {
 
     return {
       ...question,
-      options: JSON.parse(question.options),
+      options: toOptions(question.options),
     };
   }
 
@@ -288,7 +292,7 @@ export class QuizService {
 
     // Valida a combinação final (opções novas ou existentes x resposta nova ou existente).
     if (data.options !== undefined || data.correctAnswer !== undefined) {
-      const finalOptions: string[] = data.options ?? JSON.parse(question.options);
+      const finalOptions: string[] = data.options ?? toOptions(question.options);
       const finalAnswer = data.correctAnswer ?? question.correctAnswer;
       if (finalOptions.length < 2) {
         throw new HttpError(400, "Resposta correta inválida");
@@ -302,7 +306,7 @@ export class QuizService {
       where: { id: questionId },
       data: {
         ...(data.question && { question: data.question }),
-        ...(data.options && { options: JSON.stringify(data.options) }),
+        ...(data.options && { options: data.options }),
         ...(data.correctAnswer !== undefined && { correctAnswer: data.correctAnswer }),
         ...(data.order !== undefined && { order: data.order }),
       },
@@ -310,7 +314,7 @@ export class QuizService {
 
     return {
       ...updated,
-      options: JSON.parse(updated.options),
+      options: toOptions(updated.options),
     };
   }
 
@@ -376,7 +380,7 @@ export class QuizService {
 
     const questionsWithParsedOptions = quiz.questions.map((q) => ({
       ...q,
-      options: JSON.parse(q.options),
+      options: toOptions(q.options),
     }));
 
     let correct = 0;
@@ -396,7 +400,7 @@ export class QuizService {
       data: {
         userId,
         quizId,
-        answers: JSON.stringify(answers),
+        answers,
         score,
         passed,
       },

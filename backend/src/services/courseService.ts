@@ -1,5 +1,7 @@
 import { prisma } from "../config/database";
+import { CourseStatus, Difficulty } from "@prisma/client";
 import { logActivity } from "../utils/activityLogger";
+import { isEnumValue } from "../utils/enums";
 import { HttpError } from "../utils/httpError";
 import { AuthUser, isOwnerOrAdmin, isEnrolled } from "../utils/courseAccess";
 
@@ -32,7 +34,7 @@ export interface UpdateCourseData {
 }
 
 export class CourseService {
-  async listCourses(filters: CourseFilters, user: AuthUser) {
+  async listCourses(filters: CourseFilters, user: AuthUser, page = 1, limit = 20) {
     const where: any = {};
 
     if (filters.categoryId) where.categoryId = filters.categoryId;
@@ -49,41 +51,42 @@ export class CourseService {
     }
     if (filters.search) {
       where.OR = [
-        { title: { contains: filters.search } },
-        { description: { contains: filters.search } },
+        { title: { contains: filters.search, mode: "insensitive" } },
+        { description: { contains: filters.search, mode: "insensitive" } },
       ];
     }
 
-    return await prisma.course.findMany({
-      where,
-      include: {
-        instructor: {
-          select: {
-            id: true,
-            name: true,
-            avatarUrl: true,
+    // Listagem paginada e enxuta: a estrutura de módulos/aulas só é carregada em GET /courses/:id.
+    const [courses, total] = await Promise.all([
+      prisma.course.findMany({
+        where,
+        include: {
+          instructor: {
+            select: {
+              id: true,
+              name: true,
+              avatarUrl: true,
+            },
           },
-        },
-        category: true,
-        modules: {
-          include: {
-            _count: {
-              select: {
-                lessons: true,
-              },
+          category: true,
+          _count: {
+            select: {
+              enrollments: true,
+              modules: true,
             },
           },
         },
-        _count: {
-          select: {
-            enrollments: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.course.count({ where }),
+    ]);
+
+    return {
+      courses,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async getCourseById(id: string, user: AuthUser) {
@@ -177,11 +180,7 @@ export class CourseService {
       finalCategoryId = data.categoryId;
     }
 
-    const validDifficulties = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
-    const finalDifficulty =
-      data.difficulty && validDifficulties.includes(data.difficulty)
-        ? data.difficulty
-        : "BEGINNER";
+    const finalDifficulty: Difficulty = isEnumValue(Difficulty, data.difficulty) ? data.difficulty : "BEGINNER";
 
     try {
       const course = await prisma.course.create({
@@ -254,20 +253,17 @@ export class CourseService {
       }
     }
 
-    let finalDifficulty: string | undefined = undefined;
+    let finalDifficulty: Difficulty | undefined = undefined;
     if (data.difficulty) {
-      const validDifficulties = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
-      if (validDifficulties.includes(data.difficulty)) {
-        finalDifficulty = data.difficulty;
-      } else {
+      if (!isEnumValue(Difficulty, data.difficulty)) {
         throw new HttpError(400, "Dificuldade inválida. Use: BEGINNER, INTERMEDIATE ou ADVANCED");
       }
+      finalDifficulty = data.difficulty;
     }
 
-    let finalStatus: string | undefined = undefined;
+    let finalStatus: CourseStatus | undefined = undefined;
     if (data.status) {
-      const validStatuses = ["DRAFT", "PUBLISHED", "ARCHIVED", "SUSPENDED"];
-      if (!validStatuses.includes(data.status)) {
+      if (!isEnumValue(CourseStatus, data.status)) {
         throw new HttpError(400, "Status inválido. Use: DRAFT, PUBLISHED, ARCHIVED ou SUSPENDED");
       }
       // Suspensão é uma ação administrativa: instrutor não pode suspender nem reativar curso suspenso.

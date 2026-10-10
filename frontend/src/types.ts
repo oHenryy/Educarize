@@ -264,6 +264,19 @@ export interface Conversation {
 }
 
 
+export interface Paginated {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+/** Resposta de GET /courses. */
+export interface CoursesPage {
+  courses: Course[];
+  pagination: Paginated;
+}
+
 /** Parâmetros de query string enviados ao axios. */
 export type QueryParams = Record<string, string | number | boolean | string[] | undefined>;
 

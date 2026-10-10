@@ -1,12 +1,15 @@
-import { useEffect, useState, useRef } from "react";
-import { io, Socket } from "socket.io-client";
-import { api, API_URL, getErrorMessage, refreshSession } from "../api/client";
-import { useAuth } from "../context/useAuth";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { api, getErrorMessage } from "../api/client";
 import type { Conversation, Message, User } from "../types";
 import { useToast } from "../context/useToast";
+import { useAuth } from "../context/useAuth";
+import { useSocket, useSocketEvent } from "../context/useSocket";
+import { useDebouncedValue } from "../utils/useDebouncedValue";
 
 export default function MessagesPage() {
   const { user } = useAuth();
+  // Conexão compartilhada pelo app (a mesma usada pelas notificações).
+  const socket = useSocket();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -14,118 +17,19 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
+  const [userSearch, setUserSearch] = useState("");
+  const debouncedUserSearch = useDebouncedValue(userSearch);
   const [showUserSelect, setShowUserSelect] = useState(false);
   const [typing, setTyping] = useState<{ userId: string; typing: boolean } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const socketRef = useRef<Socket | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Mantém a conversa selecionada acessível aos handlers do socket sem recriar a conexão.
-  const selectedUserIdRef = useRef<string | null>(null);
   const { showToast } = useToast();
-
-  useEffect(() => {
-    selectedUserIdRef.current = selectedUserId;
-    setTyping(null);
-  }, [selectedUserId]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    
-    if (typeof io !== 'function') {
-      console.error('Socket.io não está disponível. Verifique se o pacote foi instalado corretamente.');
-      return;
-    }
-
-    // A autenticação usa o cookie httpOnly da sessão, enviado no handshake.
-    const socket = io(API_URL, {
-      withCredentials: true,
-      transports: ["websocket", "polling"],
-    });
-
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      console.log("Conectado ao Socket.io");
-    });
-
-    socket.on("new_message", (message: Message) => {
-      const currentUserId = selectedUserIdRef.current;
-      if (message.senderId === currentUserId || message.receiverId === currentUserId) {
-        setMessages((prev) => {
-          if (prev.find((m) => m.id === message.id)) return prev;
-          return [...prev, message];
-        });
-        scrollToBottom();
-        // A conversa está aberta: a mensagem já foi vista.
-        if (message.senderId === currentUserId) {
-          socket.emit("mark_conversation_as_read", { userId: currentUserId });
-        }
-      }
-      fetchConversations();
-    });
-
-    socket.on("message_sent", (message: Message) => {
-      setMessages((prev) => {
-        if (prev.find((m) => m.id === message.id)) return prev;
-        return [...prev, message];
-      });
-      scrollToBottom();
-    });
-
-    socket.on("conversations_update", (conversations: Conversation[]) => {
-      setConversations(conversations);
-    });
-
-    socket.on("unread_count_update", () => {
-      fetchConversations();
-    });
-
-    socket.on("user_typing", (data: { userId: string; typing: boolean }) => {
-      if (data.userId === selectedUserIdRef.current) {
-        setTyping(data);
-      }
-    });
-
-    socket.on("error", (error: { message: string }) => {
-      console.error("Erro Socket.io:", error);
-      showToast(error?.message || "Erro na conexão de mensagens", "error");
-    });
-
-    let renewedOnce = false;
-    socket.on("connect_error", async (error) => {
-      // O access token dura poucos minutos: renova a sessão e tenta conectar de novo (uma vez).
-      if (error.message === "Sessão expirada" && !renewedOnce) {
-        renewedOnce = true;
-        try {
-          await refreshSession();
-          socket.connect();
-          return;
-        } catch {
-          // Sessão não renovável: o AuthProvider leva o usuário ao login.
-        }
-      }
-      console.warn("Erro de conexão Socket.io:", error.message);
-    });
-
-    fetchConversations();
-    fetchUsers();
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     try {
       const res = await api.get<Conversation[]>("/messages/conversations");
       setConversations(res.data);
@@ -134,22 +38,66 @@ export default function MessagesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchUsers = async () => {
-    try {
-      const res = await api.get<User[]>("/auth/users");
-      setUsers(res.data.filter((u) => u.id !== user?.id));
-    } catch (err) {
-      console.error("Erro ao carregar usuários:", err);
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  // Busca de usuários no servidor (limitada), em vez de carregar todos os usuários da plataforma.
+  useEffect(() => {
+    if (!showUserSelect) return;
+    let cancelled = false;
+    api
+      .get<User[]>("/auth/users", { params: { search: debouncedUserSearch || undefined, limit: 20 } })
+      .then((res) => {
+        if (!cancelled) setUsers(res.data);
+      })
+      .catch((err) => console.error("Erro ao carregar usuários:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [showUserSelect, debouncedUserSearch]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // ---------- eventos em tempo real ----------
+
+  useSocketEvent<Message>("new_message", (message) => {
+    if (message.senderId === selectedUserId || message.receiverId === selectedUserId) {
+      setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+      // A conversa está aberta: a mensagem já foi vista.
+      if (message.senderId === selectedUserId) {
+        socket?.emit("mark_conversation_as_read", { userId: selectedUserId });
+      }
     }
-  };
+    fetchConversations();
+  });
+
+  useSocketEvent<Message>("message_sent", (message) => {
+    setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+    fetchConversations();
+  });
+
+  useSocketEvent<Conversation[]>("conversations_update", setConversations);
+
+  useSocketEvent<{ userId: string; typing: boolean }>("user_typing", (data) => {
+    if (data.userId === selectedUserId) setTyping(data);
+  });
+
+  useSocketEvent<{ message: string }>("error", (error) => {
+    showToast(error?.message || "Erro na conexão de mensagens", "error");
+  });
+
+  // ---------- ações ----------
 
   const fetchMessages = async (userId: string) => {
     try {
       const res = await api.get<{ messages: Message[] }>(`/messages/conversations/${userId}`);
       setMessages(res.data.messages);
-      
+
       await api.put(`/messages/conversations/${userId}/read`);
       fetchConversations();
     } catch (err) {
@@ -157,17 +105,20 @@ export default function MessagesPage() {
     }
   };
 
-  const handleSelectConversation = async (userId: string) => {
+  const selectConversation = (userId: string) => {
     setSelectedUserId(userId);
+    setTyping(null);
+  };
+
+  const handleSelectConversation = async (userId: string) => {
+    selectConversation(userId);
     await fetchMessages(userId);
-    if (socketRef.current) {
-      socketRef.current.emit("mark_conversation_as_read", { userId });
-    }
   };
 
   const handleStartConversation = async (userId: string) => {
-    setSelectedUserId(userId);
+    selectConversation(userId);
     setShowUserSelect(false);
+    setUserSearch("");
     fetchMessages(userId);
   };
 
@@ -175,23 +126,23 @@ export default function MessagesPage() {
     e.preventDefault();
     if (!newMessage.trim() || !selectedUserId || sending) return;
 
-    if (!socketRef.current?.connected) {
+    if (!socket?.connected) {
       showToast("Sem conexão com o servidor de mensagens. Tente novamente em instantes.", "error");
       return;
     }
 
     try {
       setSending(true);
-      socketRef.current.emit("send_message", {
+      socket.emit("send_message", {
         receiverId: selectedUserId,
         content: newMessage.trim(),
       });
       setNewMessage("");
-      
+
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
-      socketRef.current.emit("typing_stop", { receiverId: selectedUserId });
+      socket.emit("typing_stop", { receiverId: selectedUserId });
       setTyping(null);
     } catch (err) {
       showToast(getErrorMessage(err, "Erro ao enviar mensagem"), "error");
@@ -201,16 +152,16 @@ export default function MessagesPage() {
   };
 
   const handleTyping = () => {
-    if (!socketRef.current || !selectedUserId) return;
+    if (!socket || !selectedUserId) return;
 
-    socketRef.current.emit("typing_start", { receiverId: selectedUserId });
+    socket.emit("typing_start", { receiverId: selectedUserId });
 
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
     typingTimeoutRef.current = setTimeout(() => {
-      socketRef.current?.emit("typing_stop", { receiverId: selectedUserId });
+      socket.emit("typing_stop", { receiverId: selectedUserId });
       setTyping(null);
     }, 3000);
   };
@@ -243,12 +194,12 @@ export default function MessagesPage() {
                 type="text"
                 placeholder="Buscar usuário..."
                 className="user-search-input"
-                onFocus={(e) => {
-                  const list = e.target.nextElementSibling as HTMLElement;
-                  if (list) list.style.display = "block";
-                }}
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                autoFocus
               />
               <div className="user-list">
+                {users.length === 0 && <p className="muted" style={{ padding: "8px 12px" }}>Nenhum usuário encontrado</p>}
                 {users.map((u) => (
                   <button
                     key={u.id}

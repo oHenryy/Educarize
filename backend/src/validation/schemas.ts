@@ -2,10 +2,13 @@ import { z } from "zod";
 
 // ---------- blocos reutilizáveis ----------
 const id = z.string({ required_error: "ID é obrigatório" }).trim().min(1, "ID é obrigatório").max(64, "ID inválido");
-const text = (label: string, max: number) =>
-  z.string({ required_error: `${label} é obrigatório`, invalid_type_error: `${label} deve ser texto` })
+const text = (label: string, max: number, gender: "m" | "f" = "m") =>
+  z.string({
+    required_error: `${label} é ${gender === "f" ? "obrigatória" : "obrigatório"}`,
+    invalid_type_error: `${label} deve ser texto`,
+  })
     .trim()
-    .min(1, `${label} é obrigatório`)
+    .min(1, `${label} é ${gender === "f" ? "obrigatória" : "obrigatório"}`)
     .max(max, `${label} deve ter no máximo ${max} caracteres`);
 const optionalText = (label: string, max: number) =>
   z.string({ invalid_type_error: `${label} deve ser texto` })
@@ -65,6 +68,17 @@ export const loginBody = z.object({
 export const changePasswordBody = z.object({
   currentPassword: z.string({ required_error: "Senha atual é obrigatória" }).min(1, "Senha atual é obrigatória").max(128),
   newPassword: password("A nova senha"),
+});
+
+/** Busca de usuários (seletor de conversa, transferência de conteúdo). */
+export const usersQuery = z.object({
+  search: z.string().trim().max(100).optional(),
+  roles: z
+    .string()
+    .optional()
+    .transform((value) => (value ? value.split(",").map((r) => r.trim().toUpperCase()) : undefined))
+    .pipe(z.array(z.enum(["ADMIN", "INSTRUCTOR", "STUDENT"])).optional()),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
 export const forgotPasswordBody = z.object({
@@ -146,9 +160,9 @@ export const createQuizBody = z.object({
 export const updateQuizBody = createQuizBody.omit({ moduleId: true }).partial();
 
 const questionFields = {
-  question: text("Pergunta", 1000),
+  question: text("Pergunta", 1000, "f"),
   options: z
-    .array(text("Opção", 500), { invalid_type_error: "options deve ser um array" })
+    .array(text("Opção", 500, "f"), { invalid_type_error: "options deve ser um array" })
     .min(2, "options deve ser um array com pelo menos 2 opções")
     .max(10, "No máximo 10 opções"),
   correctAnswer: z.number({ required_error: "correctAnswer é obrigatório" }).int("Resposta correta inválida"),
@@ -171,8 +185,8 @@ export const createCommentBody = z.object({
 });
 export const updateCommentBody = z.object({ content: text("Comentário", 5000) });
 
-export const createNoteBody = z.object({ lessonId: id, content: text("Anotação", 10000) });
-export const updateNoteBody = z.object({ content: text("Anotação", 10000) });
+export const createNoteBody = z.object({ lessonId: id, content: text("Anotação", 10000, "f") });
+export const updateNoteBody = z.object({ content: text("Anotação", 10000, "f") });
 
 export const createReviewBody = z.object({
   courseId: id,
@@ -181,7 +195,7 @@ export const createReviewBody = z.object({
 });
 export const updateReviewBody = createReviewBody.omit({ courseId: true }).partial();
 
-export const sendMessageBody = z.object({ receiverId: id, content: text("Mensagem", 5000) });
+export const sendMessageBody = z.object({ receiverId: id, content: text("Mensagem", 5000, "f") });
 
 export const courseIdBody = z.object({ courseId: id });
 export const lessonIdBody = z.object({ lessonId: id });

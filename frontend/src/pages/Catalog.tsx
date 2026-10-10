@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { Pagination } from "../components/Pagination";
+import { useDebouncedValue } from "../utils/useDebouncedValue";
 import { Link } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../context/useAuth";
-import type { Course, CourseCategory, Favorite, MyEnrollment, QueryParams } from "../types";
+import type { Course, CourseCategory, CoursesPage, Favorite, MyEnrollment, QueryParams } from "../types";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { useToast } from "../context/useToast";
@@ -20,17 +22,41 @@ export default function CatalogPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const debouncedSearch = useDebouncedValue(searchTerm);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
+  // Cursos: recarregados conforme filtros e página (a busca espera o usuário parar de digitar).
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchCourses() {
+      try {
+        const params: QueryParams = { status: "PUBLISHED", page, limit: 12 };
+        if (selectedCategory) params.categoryId = selectedCategory;
+        if (selectedDifficulty) params.difficulty = selectedDifficulty;
+        if (debouncedSearch) params.search = debouncedSearch;
+
+        const { data } = await api.get<CoursesPage>("/courses", { params });
+        if (cancelled) return;
+        setCourses(data.courses);
+        setTotalPages(data.pagination.totalPages);
+      } catch (err) {
+        if (!cancelled) setError(getErrorMessage(err, "Erro ao carregar cursos"));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    fetchCourses();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCategory, selectedDifficulty, debouncedSearch, page]);
+
+  // Dados que não dependem dos filtros: carregados uma vez.
   useEffect(() => {
     async function fetchData() {
       try {
-        const params: QueryParams = { status: "PUBLISHED" };
-        if (selectedCategory) params.categoryId = selectedCategory;
-        if (selectedDifficulty) params.difficulty = selectedDifficulty;
-        if (searchTerm) params.search = searchTerm;
-
-        const [coursesRes, categoriesRes, enrollmentsRes, favoritesRes] = await Promise.all([
-          api.get<Course[]>("/courses", { params }),
+        const [categoriesRes, enrollmentsRes, favoritesRes] = await Promise.all([
           api.get<CourseCategory[]>("/categories"),
           user ? api.get<MyEnrollment[]>("/enrollments/my") : Promise.resolve({ data: [] as MyEnrollment[] }),
           user
@@ -38,7 +64,6 @@ export default function CatalogPage() {
             : Promise.resolve({ data: [] as Favorite[] }),
         ]);
 
-        setCourses(coursesRes.data);
         setCategories(categoriesRes.data);
         
         if (enrollmentsRes.data) {
@@ -52,12 +77,16 @@ export default function CatalogPage() {
         }
       } catch (err) {
         setError(getErrorMessage(err, "Erro ao carregar dados"));
-      } finally {
-        setLoading(false);
       }
     }
     fetchData();
-  }, [selectedCategory, selectedDifficulty, searchTerm, user]);
+  }, [user]);
+
+  // Mudar um filtro volta para a primeira página.
+  const changeFilter = <T,>(setter: (value: T) => void) => (value: T) => {
+    setter(value);
+    setPage(1);
+  };
 
   const handleEnroll = async (courseId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -116,12 +145,12 @@ export default function CatalogPage() {
           type="text"
           placeholder="Buscar cursos..."
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(e) => changeFilter(setSearchTerm)(e.target.value)}
           className="search-input"
         />
         <select
           value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
+          onChange={(e) => changeFilter(setSelectedCategory)(e.target.value)}
         >
           <option value="">Todas as categorias</option>
           {categories.map((cat) => (
@@ -132,7 +161,7 @@ export default function CatalogPage() {
         </select>
         <select
           value={selectedDifficulty}
-          onChange={(e) => setSelectedDifficulty(e.target.value)}
+          onChange={(e) => changeFilter(setSelectedDifficulty)(e.target.value)}
         >
           <option value="">Todas as dificuldades</option>
           <option value="BEGINNER">Iniciante</option>
@@ -199,6 +228,8 @@ export default function CatalogPage() {
           </div>
         ))}
       </div>
+
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
     </div>
   );
 }

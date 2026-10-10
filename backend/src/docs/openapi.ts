@@ -350,8 +350,8 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
     "/courses": {
       get: {
         tags: ["Cursos"],
-        summary: "Listar cursos",
-        description: "Retorna uma lista de cursos com filtros opcionais. Estudantes veem apenas cursos publicados, enquanto instrutores e admins veem todos os cursos.",
+        summary: "Listar cursos (paginado)",
+        description: "Retorna uma página de cursos com filtros opcionais. Cursos não publicados só aparecem para administradores ou para o próprio instrutor (com instructorId igual ao seu). A listagem não inclui módulos/aulas — use GET /courses/{id}.",
         security: [{ cookieAuth: [] }],
         parameters: [
           { 
@@ -381,16 +381,30 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
             schema: { type: "string" },
             description: "Buscar por título ou descrição",
             example: "JavaScript"
-          }
+          },
+          { name: "instructorId", in: "query", schema: { type: "string" }, description: "Filtrar por instrutor" },
+          { name: "page", in: "query", schema: { type: "integer", minimum: 1, default: 1 } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } }
         ],
         responses: {
-          "200": { 
-            description: "Lista de cursos",
+          "200": {
+            description: "Página de cursos",
             content: {
               "application/json": {
                 schema: {
-                  type: "array",
-                  items: { $ref: "#/components/schemas/Course" }
+                  type: "object",
+                  properties: {
+                    courses: { type: "array", items: { $ref: "#/components/schemas/Course" } },
+                    pagination: {
+                      type: "object",
+                      properties: {
+                        page: { type: "integer" },
+                        limit: { type: "integer" },
+                        total: { type: "integer" },
+                        totalPages: { type: "integer" }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -1455,9 +1469,14 @@ A sessão é mantida em cookies **httpOnly** definidos pelo servidor (o token nu
     "/auth/users": {
       get: {
         tags: ["Autenticação"],
-        summary: "Listar usuários (para mensagens)",
-        description: "Retorna uma lista básica de usuários para seleção em mensagens diretas",
+        summary: "Buscar usuários (para mensagens e transferência de conteúdo)",
+        description: "Retorna até `limit` usuários (exceto o próprio), ordenados por nome. O e-mail só é incluído — e pesquisável — para administradores.",
         security: [{ cookieAuth: [] }],
+        parameters: [
+          { name: "search", in: "query", schema: { type: "string" }, description: "Trecho do nome (ou e-mail, para admins)" },
+          { name: "roles", in: "query", schema: { type: "string" }, description: "Papéis separados por vírgula, ex.: INSTRUCTOR,ADMIN" },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } }
+        ],
         responses: {
           "200": {
             description: "Lista de usuários",

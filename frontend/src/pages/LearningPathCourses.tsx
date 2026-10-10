@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../context/useAuth";
-import type { LearningPath, LearningPathCourse, Course } from "../types";
+import type { LearningPath, LearningPathCourse, Course, CoursesPage } from "../types";
+import { useDebouncedValue } from "../utils/useDebouncedValue";
 import { useToast } from "../context/useToast";
 
 export default function LearningPathCoursesPage() {
@@ -17,6 +18,8 @@ export default function LearningPathCoursesPage() {
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [courseOrder, setCourseOrder] = useState("");
   const [isRequired, setIsRequired] = useState(true);
+  const [courseSearch, setCourseSearch] = useState("");
+  const debouncedCourseSearch = useDebouncedValue(courseSearch);
   const { showToast } = useToast();
 
   const fetchLearningPath = useCallback(async () => {
@@ -31,17 +34,17 @@ export default function LearningPathCoursesPage() {
     }
   }, [id]);
 
-  // Uma trilha pode combinar cursos publicados de qualquer instrutor.
+  // Uma trilha pode combinar cursos publicados de qualquer instrutor (busca no servidor, até 50 resultados).
   const fetchAvailableCourses = useCallback(async () => {
     try {
-      const res = await api.get<Course[]>("/courses", {
-        params: { status: "PUBLISHED" },
+      const res = await api.get<CoursesPage>("/courses", {
+        params: { status: "PUBLISHED", limit: 50, search: debouncedCourseSearch || undefined },
       });
-      setAvailableCourses(res.data);
+      setAvailableCourses(res.data.courses);
     } catch (err) {
       console.error("Erro ao carregar cursos:", err);
     }
-  }, []);
+  }, [debouncedCourseSearch]);
 
   useEffect(() => {
     if (user?.role !== "INSTRUCTOR" && user?.role !== "ADMIN") {
@@ -50,9 +53,13 @@ export default function LearningPathCoursesPage() {
     }
     if (id) {
       fetchLearningPath();
-      fetchAvailableCourses();
     }
-  }, [id, user, fetchLearningPath, fetchAvailableCourses, navigate]);
+  }, [id, user, fetchLearningPath, navigate]);
+
+  // Cursos disponíveis: só carregados com o formulário aberto, conforme a busca.
+  useEffect(() => {
+    if (showAddForm) fetchAvailableCourses();
+  }, [showAddForm, fetchAvailableCourses]);
 
   const handleAddCourse = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,6 +159,13 @@ export default function LearningPathCoursesPage() {
             <div className="form-row">
               <div className="form-group">
                 <label>Curso *</label>
+                <input
+                  type="search"
+                  value={courseSearch}
+                  onChange={(e) => setCourseSearch(e.target.value)}
+                  placeholder="Buscar curso publicado..."
+                  style={{ marginBottom: "8px" }}
+                />
                 <select
                   value={selectedCourseId}
                   onChange={(e) => setSelectedCourseId(e.target.value)}

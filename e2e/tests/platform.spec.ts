@@ -230,9 +230,25 @@ test.describe.serial("Educarize de ponta a ponta", () => {
     await bia.page.goto("/messages");
     await bia.page.locator(".conversations-sidebar").getByText("Ana Instrutora").click();
     await bia.page.waitForTimeout(800); // aguarda o socket conectar
+    // Contador do sino da Ana antes da mensagem (notificações chegam pelo socket, sem polling).
+    const badge = ana.page.locator(".notification-badge");
+    const unreadBefore = Number((await badge.count()) ? await badge.innerText() : 0);
+
     await bia.page.fill('input[placeholder="Digite sua mensagem..."]', `Tempo real ${uid}`);
     await bia.page.getByRole("button", { name: "Enviar" }).click();
     await expect(ana.page.locator(".messages-list").getByText(`Tempo real ${uid}`)).toBeVisible();
+    // O sino exibe "9+" a partir de 10 não lidas.
+    await expect(badge).toHaveText(unreadBefore + 1 > 9 ? "9+" : String(unreadBefore + 1));
+  });
+
+  test("busca de usuário no chat consulta o servidor", async () => {
+    const p = bia.page;
+    await p.getByTitle("Nova conversa").click();
+    await p.fill('input[placeholder="Buscar usuário..."]', "Caio");
+    await expect(p.locator(".user-list .user-item")).toHaveCount(1);
+    await expect(p.locator(".user-list")).toContainText("Caio Instrutor");
+    await p.fill('input[placeholder="Buscar usuário..."]', "inexistente-xyz");
+    await expect(p.getByText("Nenhum usuário encontrado")).toBeVisible();
   });
 
   test("admin transfere o conteúdo, exclui a autora e a sessão dela é encerrada", async () => {

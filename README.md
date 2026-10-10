@@ -6,13 +6,14 @@ Plataforma LMS modular com foco em simplicidade para alunos, instrutores e admin
 
 - **Backend (`backend/`)**: API REST em Node.js (Express) com TypeScript, JWT para autenticação, Socket.io para mensagens em tempo real e controle de acesso por papéis (Admin, Instrutor, Aluno).
 - **Frontend (`frontend/`)**: SPA em React/TypeScript consumindo a API, com rotas separadas para área do aluno, instrutor e administrador.
-- **Banco de Dados**: SQLite com Prisma ORM, contendo modelos para usuários, cursos, matrículas, aulas, quizzes, certificados, favoritos, notas, avaliações, notificações, tags, trilhas de aprendizado, mensagens e registros de atividades.
+- **Banco de Dados**: PostgreSQL com Prisma ORM (Redis opcional para escalar em várias instâncias), contendo modelos para usuários, cursos, matrículas, aulas, quizzes, certificados, favoritos, notas, avaliações, notificações, tags, trilhas de aprendizado, mensagens e registros de atividades.
 
 ### Tecnologias Utilizadas
 
 **Backend:**
 - Node.js + Express + TypeScript
-- Prisma ORM + SQLite
+- Prisma ORM + PostgreSQL
+- Redis (opcional: rate limit e Socket.io compartilhados entre instâncias)
 - JWT (autenticação)
 - Socket.io (mensagens em tempo real)
 - PDFKit (geração de certificados)
@@ -157,8 +158,18 @@ Educarize/
 ### Como Rodar
 
 #### Pré-requisitos
-- Node.js (v18 ou superior)
-- npm ou yarn
+- Node.js (v20 ou superior)
+- npm
+- Docker (para subir PostgreSQL e Redis) — ou um PostgreSQL 14+ e, opcionalmente, um Redis próprios
+
+#### Banco de dados e Redis
+
+Na raiz do projeto:
+```bash
+docker compose up -d
+```
+Isso sobe o PostgreSQL em `localhost:5432` (usuário, senha e banco `educarize`) e o Redis em `localhost:6379`,
+com os dados persistidos em volumes do Docker.
 
 #### Backend
 
@@ -176,21 +187,31 @@ Educarize/
    - Copie `.env.example` para `.env`
    - Edite o arquivo `.env` e configure:
      ```
-     DATABASE_URL=file:./dev.db
+     DATABASE_URL=postgresql://educarize:educarize@localhost:5432/educarize
      JWT_SECRET=uma-chave-bem-segura
      PORT=4000
      FRONTEND_URL=http://localhost:5173
+     # Opcional: compartilha rate limit e Socket.io entre várias instâncias do backend
+     REDIS_URL=redis://localhost:6379
      ```
-   - O caminho do SQLite é relativo ao `prisma/schema.prisma` (o banco fica em `backend/prisma/dev.db`).
    - `JWT_SECRET` é **obrigatório** com `NODE_ENV=production`; em desenvolvimento, se ausente, é usada uma chave
      de teste e um aviso é exibido no console.
 
 4. Execute as migrações do banco de dados:
    ```bash
-   npx prisma migrate dev
+   npx prisma migrate deploy
    ```
+   (Durante o desenvolvimento do schema, use `npx prisma migrate dev` para criar novas migrações.)
 
-5. (Opcional) Crie um usuário administrador:
+5. (Opcional) Migrando de uma instalação anterior com SQLite? Copie os dados para o PostgreSQL:
+   ```bash
+   npm run migrate:sqlite -- caminho/para/dev.db
+   ```
+   O SQLite precisa estar na última versão do schema SQLite (commit `3f75413`) e o PostgreSQL de destino, com as
+   migrações aplicadas e vazio. O script copia todas as tabelas convertendo datas, booleanos e JSON; as senhas
+   continuam valendo.
+
+6. (Opcional) Crie um usuário administrador:
    ```bash
    npm run create-admin
    ```
@@ -199,7 +220,7 @@ Educarize/
    npm run create-admin "Nome Admin" "admin@email.com" "senha123"
    ```
 
-6. Inicie o servidor:
+7. Inicie o servidor:
    ```bash
    npm run dev
    ```
@@ -242,7 +263,8 @@ Educarize/
 - `npm run prisma:migrate` - Executa migrações do banco
 - `npm run create-admin` - Cria um usuário administrador
 - `npm run typecheck` - Verifica os tipos do código e dos testes
-- `npm test` - Roda os testes de API (Vitest + Supertest) em um banco SQLite temporário
+- `npm test` - Roda os testes de API (Vitest + Supertest) em um schema PostgreSQL temporário, criado e removido
+  a cada execução (requer o PostgreSQL do `docker compose`; os testes de Redis são pulados se ele não estiver no ar)
 
 #### Frontend
 - `npm run dev` - Inicia o servidor de desenvolvimento
@@ -252,7 +274,8 @@ Educarize/
 
 #### Testes de ponta a ponta (`e2e/`)
 - `npm install` e, na primeira vez, `npx playwright install chromium`
-- `npm test` - Sobe backend (banco temporário) e frontend automaticamente e roda os cenários no Chromium
+- `npm test` - Sobe backend (schema `e2e` no PostgreSQL, com Redis) e frontend automaticamente e roda os cenários
+  no Chromium
 - `npm run test:edge` - Mesmo teste usando o Microsoft Edge instalado (sem baixar navegador)
 
 ### Integração Contínua
@@ -274,7 +297,10 @@ Acesse `http://localhost:4000/docs` para ver a documentação Swagger completa d
 
 ### Recursos Adicionais
 
-- **WebSocket**: Mensagens diretas funcionam em tempo real via Socket.io
+- **WebSocket**: Mensagens diretas e notificações chegam em tempo real via Socket.io (uma conexão por usuário
+  logado, autenticada pelo cookie da sessão; o frontend não consulta o servidor periodicamente)
+- **Listagens paginadas**: `GET /courses` devolve `{ courses, pagination }` (`page`, `limit` até 100); a busca de
+  usuários (`GET /auth/users?search=&roles=&limit=`) e a lista de conversas são calculadas no banco
 - **Certificados**: Gerados automaticamente em PDF quando o aluno completa 100% do curso
 - **Notificações**: Sistema automático de notificações para eventos importantes
 - **Busca**: Busca avançada com múltiplos filtros e sugestões

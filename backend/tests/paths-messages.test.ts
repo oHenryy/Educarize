@@ -84,3 +84,80 @@ describe("dashboard do instrutor", () => {
     expect(rate.completionRate).toBe(0);
   });
 });
+
+describe("progresso da trilha", () => {
+  it("é calculado na leitura e a conclusão é registrada quando o aluno conclui a última aula", async () => {
+    const instructor = await registerUser("INSTRUCTOR");
+    const student = await registerUser();
+    const { course, lesson } = await createCourse(instructor, { publish: true });
+    const path = (await api.post("/learning-paths").set(auth(instructor)).send({ title: "T", status: "PUBLISHED" })).body;
+    await api.post(`/learning-paths/${path.id}/courses`).set(auth(instructor)).send({ courseId: course.id });
+    await api.post(`/learning-paths/${path.id}/enroll`).set(auth(student));
+
+    const before = await api.get(`/learning-paths/${path.id}/progress`).set(auth(student));
+    expect(before.body).toMatchObject({ progress: 0, totalLessons: 1, completedLessons: 0, totalCourses: 1 });
+
+    await api.post("/progress/complete").set(auth(student)).send({ lessonId: lesson.id });
+
+    const mine = (await api.get("/learning-paths/my").set(auth(student))).body;
+    expect(mine[0]).toMatchObject({ progress: 100 });
+    expect(mine[0].completedAt).toBeTruthy();
+
+    const notifications = (await api.get("/notifications").set(auth(student))).body.notifications;
+    expect(notifications.some((n: { title: string }) => n.title === "Parabéns! Trilha concluída!")).toBe(true);
+
+    // Uma aula nova reduz o progresso exibido imediatamente (calculado na leitura).
+    const moduleId = (await api.get(`/courses/${course.id}`).set(auth(instructor))).body.modules[0].id;
+    await api.post("/lessons").set(auth(instructor)).send({ title: "Nova", moduleId });
+    const after = await api.get(`/learning-paths/${path.id}/progress`).set(auth(student));
+    expect(after.body).toMatchObject({ progress: 50, totalLessons: 2, completedLessons: 1 });
+  });
+});
+
+describe("lista de conversas", () => {
+  it("traz a última mensagem de cada conversa, mais recente primeiro, com as não lidas", async () => {
+    const me = await registerUser();
+    const ana = await registerUser("INSTRUCTOR", "Ana");
+    const caio = await registerUser("INSTRUCTOR", "Caio");
+
+    await api.post("/messages").set(auth(ana)).send({ receiverId: me.user.id, content: "ana 1" });
+    await api.post("/messages").set(auth(ana)).send({ receiverId: me.user.id, content: "ana 2" });
+    await api.post("/messages").set(auth(caio)).send({ receiverId: me.user.id, content: "caio 1" });
+    await api.post("/messages").set(auth(me)).send({ receiverId: ana.user.id, content: "resposta para ana" });
+
+    const conversations = (await api.get("/messages/conversations").set(auth(me))).body;
+    expect(conversations.map((c: { user: { name: string } }) => c.user.name)).toEqual(["Ana", "Caio"]);
+    expect(conversations[0]).toMatchObject({ unreadCount: 2, lastMessage: { content: "resposta para ana" } });
+    expect(conversations[1]).toMatchObject({ unreadCount: 1, lastMessage: { content: "caio 1" } });
+  });
+});
+
+describe("busca de usuários", () => {
+  it("filtra por nome e papel, sem incluir o próprio usuário", async () => {
+    const me = await registerUser();
+    const unique = `Zelda${Date.now()}`;
+    await registerUser("INSTRUCTOR", unique);
+    await registerUser("STUDENT", unique);
+
+    const all = (await api.get(`/auth/users?search=${unique}`).set(auth(me))).body;
+    expect(all).toHaveLength(2);
+    const instructors = (await api.get(`/auth/users?search=${unique}&roles=INSTRUCTOR`).set(auth(me))).body;
+    expect(instructors).toHaveLength(1);
+    expect(instructors[0].role).toBe("INSTRUCTOR");
+    const self = (await api.get(`/auth/users?search=${encodeURIComponent(me.user.name)}&limit=100`).set(auth(me))).body;
+    expect(self.some((u: { id: string }) => u.id === me.user.id)).toBe(false);
+  });
+});
+
+describe("listagem de cursos", () => {
+  it("é paginada", async () => {
+    const instructor = await registerUser("INSTRUCTOR");
+    for (let i = 0; i < 3; i++) await api.post("/courses").set(auth(instructor)).send({ title: `P${i}` });
+    const page1 = (await api.get(`/courses?instructorId=${instructor.user.id}&limit=2`).set(auth(instructor))).body;
+    expect(page1.courses).toHaveLength(2);
+    expect(page1.pagination).toMatchObject({ page: 1, limit: 2, total: 3, totalPages: 2 });
+    const page2 = (await api.get(`/courses?instructorId=${instructor.user.id}&limit=2&page=2`).set(auth(instructor))).body;
+    expect(page2.courses).toHaveLength(1);
+    expect(page2.courses[0].modules).toBeUndefined();
+  });
+});
