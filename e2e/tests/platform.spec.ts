@@ -374,17 +374,19 @@ test.describe.serial("Educarize de ponta a ponta", () => {
     await p.getByRole("button", { name: "Adicionar" }).click();
     await expect(p.locator(".courses-section").getByText(`Curso do Caio ${uid}`)).toBeVisible();
 
-    // Reordenação pelo teclado: pega o primeiro curso, desce uma posição e solta.
-    // Cada passo espera o aviso para leitores de tela antes do próximo.
-    const announcer = p.locator('[id^="DndLiveRegion"]');
-    await p.getByRole("button", { name: `Reordenar ${courseTitle}` }).focus();
-    await p.keyboard.press("Space");
-    await expect(announcer).toContainText("selecionado, na posição 1 de 2");
+    // Reordenação pelo teclado: com a alça em foco, a seta desce o curso uma posição e o foco continua nela.
+    // A janela baixa deixa o destino na metade de baixo da tela (o caso que falhou no CI com o sensor do dnd-kit).
+    const announcer = p.locator("[data-sortable-announcer]");
+    await p.setViewportSize({ width: 1280, height: 480 });
+    const handle = p.getByRole("button", { name: `Reordenar ${courseTitle}` });
+    await handle.focus();
     await p.keyboard.press("ArrowDown");
-    await expect(announcer).toContainText("movido para a posição 2 de 2");
-    await p.keyboard.press("Space");
-    await expect(announcer).toContainText("solto na posição 2 de 2");
+    await expect(announcer).toHaveText(`"${courseTitle}" movido para a posição 2 de 2.`);
+    await expect(handle).toBeFocused();
+    await p.keyboard.press("ArrowDown");
+    await expect(announcer).toHaveText(`"${courseTitle}" já está na última posição.`);
     await expect(p.locator(".course-item h4").first()).toHaveText(`Curso do Caio ${uid}`);
+    await p.setViewportSize({ width: 1280, height: 720 });
     const pathId = p.url().split("/learning-paths/")[1].split("/")[0];
     await expect
       .poll(async () => {

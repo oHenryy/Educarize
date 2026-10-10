@@ -1,7 +1,6 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
   DndContext,
-  KeyboardSensor,
   PointerSensor,
   closestCenter,
   useSensor,
@@ -10,13 +9,7 @@ import {
   type DragEndEvent,
   type UniqueIdentifier,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 type SortableListProps<T> = {
@@ -34,11 +27,14 @@ type SortableListProps<T> = {
 };
 
 const screenReaderInstructions = {
-  draggable:
-    "Para reordenar, pressione espaço ou Enter para pegar o item, use as setas para mover e pressione espaço ou Enter de novo para soltar. Esc cancela.",
+  draggable: "Para reordenar, use as setas para cima e para baixo. Também é possível arrastar com o mouse ou o toque.",
 };
 
-/** Lista reordenável por arrastar (mouse ou toque) ou pelo teclado na alça ⠿. */
+/**
+ * Lista reordenável por arrastar (mouse ou toque) ou pelo teclado: com a alça ⠿ em foco, as setas movem
+ * o item uma posição. O teclado não usa o sensor do dnd-kit, que rola a página em vez de mover o item
+ * quando o destino está na metade de baixo da tela e só encontra o destino quando a rolagem termina.
+ */
 export default function SortableList<T>({
   items,
   getId,
@@ -51,29 +47,32 @@ export default function SortableList<T>({
 }: SortableListProps<T>) {
   const sensors = useSensors(
     // Pequena distância mínima: um clique simples na alça não inicia o arraste.
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [announcement, setAnnouncement] = useState("");
+  // Alça que deve continuar com o foco depois que o item muda de lugar na lista.
+  const pendingFocusId = useRef<string | null>(null);
 
   const ids = items.map(getId);
-  // Último alvo anunciado: o arraste começa "sobre" o próprio item, o que não deve sobrescrever o aviso inicial.
-  const lastOverId = useRef<UniqueIdentifier | null>(null);
   const labelOf = (id: UniqueIdentifier) => {
     const item = items.find((candidate) => getId(candidate) === id);
     return item ? `"${getLabel(item)}"` : "item";
   };
   const positionOf = (id: UniqueIdentifier | undefined) => (id === undefined ? 0 : ids.indexOf(String(id)) + 1);
 
+  useEffect(() => {
+    const id = pendingFocusId.current;
+    if (!id) return;
+    pendingFocusId.current = null;
+    const handle = containerRef.current?.querySelector<HTMLElement>(`[data-sortable-handle="${window.CSS.escape(id)}"]`);
+    handle?.focus();
+  }, [items]);
+
+  // Avisos do arraste com mouse ou toque.
   const announcements: Announcements = {
-    onDragStart: ({ active }) => {
-      lastOverId.current = active.id;
-      return `${labelOf(active.id)} selecionado, na posição ${positionOf(active.id)} de ${ids.length}.`;
-    },
-    onDragOver: ({ active, over }) => {
-      if (!over || over.id === lastOverId.current) return undefined;
-      lastOverId.current = over.id;
-      return `${labelOf(active.id)} movido para a posição ${positionOf(over.id)} de ${ids.length}.`;
-    },
+    onDragStart: ({ active }) => `${labelOf(active.id)} selecionado, na posição ${positionOf(active.id)} de ${ids.length}.`,
+    onDragOver: () => undefined,
     onDragEnd: ({ active, over }) =>
       over ? `${labelOf(active.id)} solto na posição ${positionOf(over.id)} de ${ids.length}.` : `${labelOf(active.id)} solto.`,
     onDragCancel: ({ active }) => `Reordenação cancelada. ${labelOf(active.id)} voltou para a posição original.`,
@@ -87,6 +86,22 @@ export default function SortableList<T>({
     onReorder(arrayMove(items, from, to));
   };
 
+  const handleKeyDown = (id: string, event: KeyboardEvent<HTMLButtonElement>) => {
+    const from = ids.indexOf(id);
+    const targets: Record<string, number> = { ArrowUp: from - 1, ArrowDown: from + 1, Home: 0, End: ids.length - 1 };
+    if (!(event.key in targets) || from < 0) return;
+    event.preventDefault();
+
+    const to = targets[event.key];
+    if (to < 0 || to >= ids.length || to === from) {
+      setAnnouncement(`${labelOf(id)} já está na ${from === 0 ? "primeira" : "última"} posição.`);
+      return;
+    }
+    pendingFocusId.current = id;
+    onReorder(arrayMove(items, from, to));
+    setAnnouncement(`${labelOf(id)} movido para a posição ${to + 1} de ${ids.length}.`);
+  };
+
   return (
     <DndContext
       sensors={sensors}
@@ -95,7 +110,7 @@ export default function SortableList<T>({
       accessibility={{ announcements, screenReaderInstructions }}
     >
       <SortableContext items={ids} strategy={verticalListSortingStrategy} disabled={disabled}>
-        <div className={className}>
+        <div className={className} ref={containerRef}>
           {items.map((item, index) => (
             <SortableItem
               key={getId(item)}
@@ -103,12 +118,16 @@ export default function SortableList<T>({
               label={getLabel(item)}
               disabled={disabled}
               className={itemClassName?.(item)}
+              onKeyDown={(event) => handleKeyDown(getId(item), event)}
             >
               {(handle) => children(item, handle, index)}
             </SortableItem>
           ))}
         </div>
       </SortableContext>
+      <div className="visually-hidden" role="status" aria-live="assertive" aria-atomic="true" data-sortable-announcer>
+        {announcement}
+      </div>
     </DndContext>
   );
 }
@@ -118,10 +137,11 @@ type SortableItemProps = {
   label: string;
   disabled: boolean;
   className?: string;
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
   children: (handle: ReactNode) => ReactNode;
 };
 
-function SortableItem({ id, label, disabled, className, children }: SortableItemProps) {
+function SortableItem({ id, label, disabled, className, onKeyDown, children }: SortableItemProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled,
@@ -132,9 +152,11 @@ function SortableItem({ id, label, disabled, className, children }: SortableItem
       type="button"
       ref={setActivatorNodeRef}
       className="drag-handle"
-      title="Arraste para reordenar"
+      title="Arraste ou use as setas para reordenar"
       {...attributes}
       {...listeners}
+      onKeyDown={onKeyDown}
+      data-sortable-handle={id}
       aria-label={`Reordenar ${label}`}
     >
       ⠿
